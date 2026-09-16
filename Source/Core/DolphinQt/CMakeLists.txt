@@ -298,6 +298,14 @@ add_executable(project-plus-dolphin
   ProjectPlus/InstallUpdateDialog.h
   ProjectPlus/UpdateDialog.cpp
   ProjectPlus/UpdateDialog.h
+  QuickPlay/QuickPlayClient.cpp
+  QuickPlay/QuickPlayClient.h
+  QuickPlay/QuickPlayController.cpp
+  QuickPlay/QuickPlayController.h
+  QuickPlay/QuickPlayDialog.cpp
+  QuickPlay/QuickPlayDialog.h
+  QuickPlay/QuickPlayLauncher.cpp
+  QuickPlay/QuickPlayLauncher.h
   MenuBar.cpp
   MenuBar.h
   NetPlay/ChunkedProgressDialog.cpp

@@ -22,6 +22,7 @@ public:
   {
     GET,
     POST,
+    Delete,
   };
 
   explicit Impl(std::chrono::milliseconds timeout_ms, ProgressCallback callback);
@@ -29,6 +30,8 @@ public:
   bool IsValid() const;
   std::string GetHeaderValue(std::string_view name) const;
   void SetCookies(const std::string& cookies);
+  void SetTimeout(std::chrono::milliseconds timeout);
+  void SetSensitive(bool sensitive) { m_sensitive = sensitive; }
   void UseIPv4();
   void FollowRedirects(long max);
   s32 GetLastResponseCode();
@@ -49,6 +52,7 @@ private:
   std::unique_ptr<CURL, decltype(&curl_easy_cleanup)> m_curl{nullptr, curl_easy_cleanup};
   std::string m_error_string;
   std::string m_final_url;
+  bool m_sensitive = false;
 };
 
 HttpRequest::HttpRequest(std::chrono::milliseconds timeout_ms, ProgressCallback callback)
@@ -75,6 +79,27 @@ bool HttpRequest::IsValid() const
 void HttpRequest::SetCookies(const std::string& cookies)
 {
   m_impl->SetCookies(cookies);
+}
+
+void HttpRequest::SetTimeout(std::chrono::milliseconds timeout)
+{
+  m_impl->SetTimeout(timeout);
+}
+
+void HttpRequest::SetSensitive(bool sensitive)
+{
+  m_impl->SetSensitive(sensitive);
+}
+
+void HttpRequest::Impl::SetTimeout(std::chrono::milliseconds timeout)
+{
+  curl_easy_setopt(m_curl.get(), CURLOPT_TIMEOUT_MS, static_cast<long>(timeout.count()));
+}
+
+HttpRequest::Response HttpRequest::Delete(const std::string& url, const Headers& headers,
+                                         AllowedReturnCodes codes)
+{
+  return m_impl->Fetch(url, Impl::Method::Delete, headers, nullptr, 0, codes);
 }
 
 void HttpRequest::UseIPv4()
@@ -270,6 +295,9 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
                                                const std::vector<Multiform>& multiform)
 {
   m_response_headers.clear();
+  // CUSTOMREQUEST persists across transfers, so reset it for GET/POST reuse.
+  curl_easy_setopt(m_curl.get(), CURLOPT_CUSTOMREQUEST,
+                   method == Impl::Method::Delete ? "DELETE" : nullptr);
   curl_easy_setopt(m_curl.get(), CURLOPT_POST, method == Impl::Method::POST);
   curl_easy_setopt(m_curl.get(), CURLOPT_URL, url.c_str());
   if (method == Impl::Method::POST && multiform.empty())
@@ -316,11 +344,15 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
   curl_easy_setopt(m_curl.get(), CURLOPT_WRITEFUNCTION, CurlWriteCallback);
   curl_easy_setopt(m_curl.get(), CURLOPT_WRITEDATA, &buffer);
 
-  const char* type = method == Impl::Method::POST ? "POST" : "GET";
+  const char* type = method == Impl::Method::POST ? "POST" :
+                     method == Impl::Method::Delete ? "DELETE" : "GET";
   const CURLcode res = curl_easy_perform(m_curl.get());
   if (res != CURLE_OK)
   {
-    ERROR_LOG_FMT(COMMON, "Failed to {} {}: {}", type, url, m_error_string);
+    if (m_sensitive)
+      ERROR_LOG_FMT(COMMON, "Sensitive HTTP request failed");
+    else
+      ERROR_LOG_FMT(COMMON, "Failed to {} {}: {}", type, url, m_error_string);
     return {};
   }
 
@@ -337,7 +369,11 @@ HttpRequest::Response HttpRequest::Impl::Fetch(const std::string& url, Method me
   curl_easy_getinfo(m_curl.get(), CURLINFO_RESPONSE_CODE, &response_code);
   if (response_code != 200)
   {
-    if (buffer.empty())
+    if (m_sensitive)
+    {
+      ERROR_LOG_FMT(COMMON, "Sensitive HTTP request failed with status {}", response_code);
+    }
+    else if (buffer.empty())
     {
       ERROR_LOG_FMT(COMMON, "Failed to {} {}: server replied with code {}", type, url,
                     response_code);

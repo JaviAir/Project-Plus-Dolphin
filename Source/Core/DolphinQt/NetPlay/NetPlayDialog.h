@@ -72,6 +72,8 @@ public:
   void OnConnectionError(const std::string& message) override;
   void OnTraversalError(Common::TraversalClient::FailureReason error) override;
   void OnTraversalStateChanged(Common::TraversalClient::State state) override;
+  void OnHostTraversalStateChanged(u64 attempt, Common::TraversalClient::State state,
+                                  const std::string& code) override;
   void OnGameStartAborted() override;
   void OnGolferChanged(bool is_golfer, const std::string& golfer_name) override;
   void OnTtlDetermined(u8 ttl) override;
@@ -104,6 +106,7 @@ public:
   void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override;
 
 signals:
+  void HostTraversalChanged(quint64 attempt, QString code, bool failed);
   void Stop();
 
 private:

@@ -46,6 +46,10 @@ public:
   };
 
   void SetCookies(const std::string& cookies);
+  // Optional total transfer deadline; existing callers retain their timeout behavior.
+  void SetTimeout(std::chrono::milliseconds timeout);
+  // Suppress URLs, response bodies and curl diagnostics containing bearer capabilities.
+  void SetSensitive(bool sensitive);
   void UseIPv4();
   void FollowRedirects(long max = 1);
   s32 GetLastResponseCode() const;
@@ -57,6 +61,9 @@ public:
                 AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only);
   Response Post(const std::string& url, std::string_view payload, const Headers& headers = {},
                 AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only);
+
+  Response Delete(const std::string& url, const Headers& headers = {},
+                  AllowedReturnCodes codes = AllowedReturnCodes::Ok_Only);
 
   Response PostMultiform(const std::string& url, const std::vector<Multiform>& multiform,
                          const Headers& headers = {},

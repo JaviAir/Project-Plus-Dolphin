@@ -22,7 +22,7 @@ class InstallUpdateDialog : public QDialog
     Q_OBJECT
 
 public:
-    InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename, QString downloadUrl = QString());
+    InstallUpdateDialog(QWidget *parent, QString installation_directory, QString temporary_directory, QString archive_filename, QString download_url = QString());
     ~InstallUpdateDialog();
 
     void install(void);

@@ -197,6 +197,10 @@
     <ClCompile Include="ProjectPlus/DownloadWorker.cpp" />
     <ClCompile Include="ProjectPlus/InstallUpdateDialog.cpp" />
     <ClCompile Include="ProjectPlus/UpdateDialog.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayClient.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayController.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayDialog.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayLauncher.cpp" />
     <ClCompile Include="MenuBar.cpp" />
     <ClCompile Include="NetPlay\ChunkedProgressDialog.cpp" />
     <ClCompile Include="NetPlay\GameDigestDialog.cpp" />
@@ -279,6 +283,8 @@
     <QtMoc Include="Config\PatchesWidget.h" />
     <ClInclude Include="Debugger\RegisterColumn.h" />
     <ClInclude Include="GBAHost.h" />
+    <ClInclude Include="QuickPlay\QuickPlayClient.h" />
+    <ClInclude Include="QuickPlay\QuickPlayLauncher.h" />
     <ClInclude Include="QtUtils\ActionHelper.h" />
     <ClInclude Include="QtUtils\ClearLayoutRecursively.h" />
     <QtMoc Include="QtUtils\ClickableStatusBar.h" />
@@ -430,6 +436,8 @@
     <QtMoc Include="ProjectPlus/DownloadWorker.h" />
     <QtMoc Include="ProjectPlus/InstallUpdateDialog.h" />
     <QtMoc Include="ProjectPlus/UpdateDialog.h" />
+    <QtMoc Include="QuickPlay\QuickPlayController.h" />
+    <QtMoc Include="QuickPlay\QuickPlayDialog.h" />
     <QtMoc Include="MenuBar.h" />
     <QtMoc Include="NetPlay\ChunkedProgressDialog.h" />
     <QtMoc Include="NetPlay\GameDigestDialog.h" />

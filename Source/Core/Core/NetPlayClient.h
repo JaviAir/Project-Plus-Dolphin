@@ -70,6 +70,11 @@ public:
   virtual void OnConnectionError(const std::string& message) = 0;
   virtual void OnTraversalError(Common::TraversalClient::FailureReason error) = 0;
   virtual void OnTraversalStateChanged(Common::TraversalClient::State state) = 0;
+  // Host-owned value snapshot; default no-op for other frontends.
+  virtual void OnHostTraversalStateChanged(u64, Common::TraversalClient::State,
+                                           const std::string&)
+  {
+  }
   virtual void OnGameStartAborted() = 0;
   virtual void OnGolferChanged(bool is_golfer, const std::string& golfer_name) = 0;
   virtual void OnTtlDetermined(u8 ttl) = 0;
@@ -116,7 +121,7 @@ public:
   void ThreadFunc();
   void SendAsync(sf::Packet&& packet, u8 channel_id = DEFAULT_CHANNEL);
 
-  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog, std::string name,
+  NetPlayClient(const std::string& address, const u16 port, NetPlayUI* netplay_ui, std::string name,
                 const NetTraversalConfig& traversal_config);
   ~NetPlayClient() override;
 

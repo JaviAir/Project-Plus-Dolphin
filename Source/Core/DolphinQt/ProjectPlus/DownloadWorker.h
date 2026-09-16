@@ -12,7 +12,7 @@ class DownloadWorker : public QObject
     Q_OBJECT
 
 public:
-    DownloadWorker(const QString& url, const QString& filename);
+    DownloadWorker(const QString& download_url, const QString& output_filename);
     
 public slots:
     void startDownload();

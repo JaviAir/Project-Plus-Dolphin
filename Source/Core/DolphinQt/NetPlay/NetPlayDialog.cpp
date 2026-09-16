@@ -1075,6 +1075,17 @@ void NetPlayDialog::OnTraversalError(Common::TraversalClient::FailureReason erro
   });
 }
 
+void NetPlayDialog::OnHostTraversalStateChanged(u64 attempt, Common::TraversalClient::State state,
+                                                const std::string& code)
+{
+  // Copy on the traversal callback thread, never read the global client from a queued lambda.
+  const auto copied_code = QString::fromStdString(code);
+  const bool failed = state == Common::TraversalClient::State::Failure;
+  QueueOnObject(this, [this, attempt, copied_code, failed] {
+    emit HostTraversalChanged(attempt, copied_code, failed);
+  });
+}
+
 void NetPlayDialog::OnTraversalStateChanged(Common::TraversalClient::State state)
 {
   switch (state)

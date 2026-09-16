@@ -38,7 +38,7 @@ private:
 #endif // _WIN32
 
 public:
-    explicit UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced);
+    explicit UpdateDialog(QWidget *parent, QJsonObject update_info, bool forced);
     ~UpdateDialog();
     
 private slots:

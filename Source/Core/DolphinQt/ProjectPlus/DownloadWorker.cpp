@@ -9,8 +9,8 @@
 #include <QFile>
 #include <QDebug>
 
-DownloadWorker::DownloadWorker(const QString& url, const QString& filename)
-    : url(url), filename(filename) {}
+DownloadWorker::DownloadWorker(const QString& download_url, const QString& output_filename)
+    : url(download_url), filename(output_filename) {}
 
 void DownloadWorker::startDownload()
 {

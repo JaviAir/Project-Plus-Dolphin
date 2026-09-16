@@ -124,9 +124,9 @@ NetPlayClient::~NetPlayClient()
 }
 
 // called from ---GUI--- thread
-NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlayUI* dialog,
+NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlayUI* netplay_ui,
                              std::string name, const NetTraversalConfig& traversal_config)
-    : m_dialog(dialog), m_player_name(std::move(name))
+    : m_dialog(netplay_ui), m_player_name(std::move(name))
 {
   ClearBuffers();
 
@@ -197,6 +197,7 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
       m_traversal_client->ReconnectToServer();
     m_traversal_client->m_Client = this;
     m_host_spec = address;
+    INFO_LOG_FMT(NETPLAY, "Traversal join: waiting for traversal server");
     m_connection_state = ConnectionState::WaitingForTraversalClientConnection;
     OnTraversalStateChanged();
     m_connecting = true;
@@ -216,6 +217,7 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
         switch (netEvent.type)
         {
         case ENET_EVENT_TYPE_CONNECT:
+          INFO_LOG_FMT(NETPLAY, "Traversal join: peer transport connected; starting NetPlay handshake");
           m_server = netEvent.peer;
 
           // Update time in milliseconds of no acknowledgment of
@@ -224,8 +226,13 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
 
           if (Connect())
           {
+            INFO_LOG_FMT(NETPLAY, "Traversal join: NetPlay handshake succeeded");
             m_connection_state = ConnectionState::Connected;
             m_thread = std::thread(&NetPlayClient::ThreadFunc, this);
+          }
+          else
+          {
+            WARN_LOG_FMT(NETPLAY, "Traversal join: NetPlay handshake failed");
           }
           return;
         default:
@@ -235,6 +242,14 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
       if (connect_timer.ElapsedMs() > 5000)
         break;
     }
+    const char* stage = "connection failure";
+    if (m_connection_state == ConnectionState::WaitingForTraversalClientConnection)
+      stage = "waiting for traversal server";
+    else if (m_connection_state == ConnectionState::WaitingForTraversalClientConnectReady)
+      stage = "waiting for host lookup";
+    else if (m_connection_state == ConnectionState::Connecting)
+      stage = "waiting for peer transport";
+    WARN_LOG_FMT(NETPLAY, "Traversal join: stopped while {}", stage);
     m_dialog->OnConnectionError(_trans("Could not communicate with host."));
   }
 }
@@ -2000,6 +2015,7 @@ void NetPlayClient::OnTraversalStateChanged()
   if (m_connection_state == ConnectionState::WaitingForTraversalClientConnection &&
       state == Common::TraversalClient::State::Connected)
   {
+    INFO_LOG_FMT(NETPLAY, "Traversal join: traversal server connected; requesting host lookup");
     m_connection_state = ConnectionState::WaitingForTraversalClientConnectReady;
     m_traversal_client->ConnectToClient(m_host_spec);
   }
@@ -2017,6 +2033,7 @@ void NetPlayClient::OnConnectReady(ENetAddress addr)
 {
   if (m_connection_state == ConnectionState::WaitingForTraversalClientConnectReady)
   {
+    INFO_LOG_FMT(NETPLAY, "Traversal join: host lookup succeeded; connecting peer transport");
     m_connection_state = ConnectionState::Connecting;
     enet_host_connect(m_client, &addr, CHANNEL_COUNT, 0);
   }
@@ -2025,6 +2042,7 @@ void NetPlayClient::OnConnectReady(ENetAddress addr)
 // called from ---NETPLAY--- thread
 void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 {
+  WARN_LOG_FMT(NETPLAY, "Traversal join: host lookup failed (reason {})", static_cast<int>(reason));
   m_connecting = false;
   m_connection_state = ConnectionState::Failure;
   switch (reason)

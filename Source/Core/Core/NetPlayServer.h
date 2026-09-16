@@ -40,7 +40,9 @@ public:
                             const std::string& title = "");
 
   NetPlayServer(u16 port, bool forward_port, NetPlayUI* dialog,
-                const NetTraversalConfig& traversal_config);
+                const NetTraversalConfig& traversal_config, u64 quickplay_attempt = 0);
+  // Atomically close admission only if no remote player has joined this Quick Play room.
+  bool PrepareQuickPlayCancel(u64 attempt);
   ~NetPlayServer() override;
 
   bool ChangeGame(const SyncIdentifier& sync_identifier, const std::string& netplay_name);
@@ -180,6 +182,11 @@ private:
   bool m_host_input_authority = false;
   PlayerId m_current_golfer = 1;
   PlayerId m_pending_golfer = 0;
+
+  const u64 m_quickplay_attempt;
+  bool m_quickplay_cancelled = false;  // Protected by m_crit.game.
+  bool m_quickplay_had_peer = false;   // Latched under m_crit.game.
+  void NotifyHostTraversalState();
 
   std::map<PlayerId, Client> m_players;
 

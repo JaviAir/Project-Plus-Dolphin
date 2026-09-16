@@ -291,7 +291,7 @@ void GeneralPane::LoadConfig()
     SignalBlocking(m_combobox_fallback_region)->setCurrentIndex(FALLBACK_REGION_NTSCJ_INDEX);
 }
 
-static QString UpdateTrackFromIndex(int index)
+/* static QString UpdateTrackFromIndex(int index)
 {
   QString value;
 
@@ -309,7 +309,7 @@ static QString UpdateTrackFromIndex(int index)
   }
 
   return value;
-}
+} */ // disabled for P+ updater
 
 static DiscIO::Region UpdateFallbackRegionFromIndex(int index)
 {
@@ -405,7 +405,7 @@ void GeneralPane::AddDescriptions()
                  "<br><br>This setting cannot be changed while emulation is active."
                  "<br><br><dolphin_emphasis>If unsure, leave this checked.</dolphin_emphasis>");
 #endif
-  static constexpr char TR_UPDATE_TRACK_DESCRIPTION[] = QT_TR_NOOP(
+  /* static constexpr char TR_UPDATE_TRACK_DESCRIPTION[] = QT_TR_NOOP(
       "Selects which update track Dolphin uses when checking for updates at startup. If a new "
       "update is available, Dolphin will show a list of changes made since your current version "
       "and ask you if you want to update."
@@ -423,7 +423,7 @@ void GeneralPane::AddDescriptions()
       "making any new savestates."
       "<br><br>Selecting \"Don't Update\" will prevent Dolphin from automatically checking for "
       "updates."
-      "<br><br><dolphin_emphasis>If unsure, select Releases.</dolphin_emphasis>");
+      "<br><br><dolphin_emphasis>If unsure, select Releases.</dolphin_emphasis>"); */ // disabled for P+ updater
   static constexpr char TR_FALLBACK_REGION_DESCRIPTION[] =
       QT_TR_NOOP("Sets the region used for titles whose region cannot be determined automatically."
                  "<br><br>This setting cannot be changed while emulation is active.");

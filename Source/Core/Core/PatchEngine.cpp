@@ -240,7 +240,7 @@ static void ApplyPatches(const Core::CPUThreadGuard& guard, const std::vector<Pa
 {
   for (const Patch& patch : patches)
   {
-    if (patch.enabled && !IsDisabledMusicCode(patch) || IsEnabledMusicCode(patch))
+    if ((patch.enabled && !IsDisabledMusicCode(patch)) || IsEnabledMusicCode(patch))
     {
       for (const PatchEntry& entry : patch.entries)
       {

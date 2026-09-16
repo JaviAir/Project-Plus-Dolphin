@@ -29,6 +29,7 @@ signals:
   void FullScreenPressed();
   void ScreenShotPressed();
   void NetPlaySetupDialogPressed();
+  void QuickPlayPressed();
 
   void SettingsPressed();
   void ControllersPressed();
@@ -61,6 +62,7 @@ private:
   QAction* m_controllers_action;
   QAction* m_graphics_action;
   QAction* m_netplay_setup_action;
+  QAction* m_quickplay_action;
   QAction* m_updater_action;
 
   QAction* m_step_action;

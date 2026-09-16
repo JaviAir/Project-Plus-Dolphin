@@ -46,6 +46,8 @@ class MenuBar;
 class NetPlayDialog;
 class NetPlaySetupDialog;
 class NetworkWidget;
+class QuickPlayController;
+class QuickPlayDialog;
 class RegisterWidget;
 class RenderWidget;
 class SearchBar;
@@ -181,6 +183,7 @@ private:
   void ShowHotkeyDialog();
   void ShowNetPlaySetupDialog();
   void ShowNetPlayBrowser();
+  void StartQuickPlay();
   void ShowFIFOPlayer();
   void ShowSkylanderPortal();
   void ShowInfinityBase();
@@ -199,6 +202,13 @@ private:
 
   void NetPlayInit();
   bool NetPlayJoin();
+  bool NetPlayJoinInternal(bool force_traversal);
+  bool NetPlayHostInternal(const UICommon::GameFile& game, u64 quickplay_attempt);
+  bool JoinQuickPlayHost(const QString& host_code);
+  bool m_quickplay_joining = false;
+  QString StartQuickPlayHost(u64 attempt);
+  void CancelQuickPlayHost(u64 attempt);
+  u64 m_quickplay_host_attempt = 0;
   bool NetPlayHost(const UICommon::GameFile& game);
   void NetPlayQuit();
 
@@ -274,6 +284,8 @@ private:
   NetPlayDialog* m_netplay_dialog;
   DiscordHandler* m_netplay_discord;
   NetPlaySetupDialog* m_netplay_setup_dialog;
+  QuickPlayController* m_quickplay_controller = nullptr;
+  QuickPlayDialog* m_quickplay_dialog = nullptr;
   static constexpr int num_gc_controllers = 4;
   std::array<GCTASInputWindow*, num_gc_controllers> m_gc_tas_input_windows{};
   std::array<GBATASInputWindow*, num_gc_controllers> m_gba_tas_input_windows{};

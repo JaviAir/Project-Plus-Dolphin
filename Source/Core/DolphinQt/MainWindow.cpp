@@ -115,6 +115,9 @@
 #include "DolphinQt/NetPlay/NetPlaySetupDialog.h"
 #include "DolphinQt/ProjectPlus/InstallUpdateDialog.h"
 #include "DolphinQt/ProjectPlus/UpdateDialog.h"
+#include "DolphinQt/QuickPlay/QuickPlayController.h"
+#include "DolphinQt/QuickPlay/QuickPlayDialog.h"
+#include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/FileOpenEventFilter.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
@@ -349,6 +352,12 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
 
 MainWindow::~MainWindow()
 {
+  // Destroy orchestration while its MainWindow callbacks and NetPlay dialog are still alive.
+  delete m_quickplay_dialog;
+  m_quickplay_dialog = nullptr;
+  delete m_quickplay_controller;
+  m_quickplay_controller = nullptr;
+
   // Shut down NetPlay first to avoid race condition segfault
   Settings::Instance().ResetNetPlayClient();
   Settings::Instance().ResetNetPlayServer();
@@ -714,6 +723,7 @@ void MainWindow::ConnectToolBar()
   connect(m_tool_bar, &ToolBar::FullScreenPressed, this, &MainWindow::FullScreen);
   connect(m_tool_bar, &ToolBar::ScreenShotPressed, this, &MainWindow::ScreenShot);
   connect(m_tool_bar, &ToolBar::NetPlaySetupDialogPressed, this, &MainWindow::ShowNetPlaySetupDialog);
+  connect(m_tool_bar, &ToolBar::QuickPlayPressed, this, &MainWindow::StartQuickPlay);
   connect(m_tool_bar, &ToolBar::SettingsPressed, this, &MainWindow::ShowSettingsWindow);
   connect(m_tool_bar, &ToolBar::ControllersPressed, this, &MainWindow::ShowControllersWindow);
   connect(m_tool_bar, &ToolBar::GraphicsPressed, this, &MainWindow::ShowGraphicsWindow);
@@ -1525,6 +1535,26 @@ void MainWindow::ShowGraphicsWindow()
   m_settings_window->SelectPane(SettingsWindowPaneIndex::Graphics);
 }
 
+void MainWindow::StartQuickPlay()
+{
+  if (!m_quickplay_controller)
+  {
+    m_quickplay_controller =
+        new QuickPlayController([this](u64 attempt) { return StartQuickPlayHost(attempt); },
+                                [this](u64 attempt) { CancelQuickPlayHost(attempt); },
+                                [this](const QString& code) { return JoinQuickPlayHost(code); }, this);
+    connect(m_netplay_dialog, &NetPlayDialog::HostTraversalChanged, m_quickplay_controller,
+            &QuickPlayController::OnHostTraversalChanged);
+    m_quickplay_dialog = new QuickPlayDialog(*m_quickplay_controller, this);
+  }
+
+  // Start refuses duplicate attempts; repeated actions only bring the existing dialog forward.
+  m_quickplay_controller->Start();
+  m_quickplay_dialog->show();
+  m_quickplay_dialog->raise();
+  m_quickplay_dialog->activateWindow();
+}
+
 void MainWindow::ShowNetPlaySetupDialog()
 {
   m_netplay_setup_dialog->show();
@@ -1735,6 +1765,13 @@ void MainWindow::NetPlayInit()
 
 bool MainWindow::NetPlayJoin()
 {
+  if (m_quickplay_host_attempt || m_quickplay_joining)
+    return false;
+  return NetPlayJoinInternal(false);
+}
+
+bool MainWindow::NetPlayJoinInternal(bool force_traversal)
+{
   if (!Core::IsUninitialized(m_system))
   {
     ModalMessageBox::critical(nullptr, tr("Error"),
@@ -1753,7 +1790,7 @@ bool MainWindow::NetPlayJoin()
 
   // Settings
   const std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
-  const bool is_traversal = traversal_choice == "traversal";
+  const bool is_traversal = force_traversal || traversal_choice == "traversal";
 
   std::string host_ip;
   u16 host_port;
@@ -1800,7 +1837,65 @@ bool MainWindow::NetPlayJoin()
   return true;
 }
 
+bool MainWindow::JoinQuickPlayHost(const QString& host_code)
+{
+  if (m_quickplay_joining || m_quickplay_host_attempt ||
+      !QuickPlayClient::IsValidHostCode(host_code) || !Core::IsUninitialized(m_system) ||
+      Settings::Instance().GetNetPlayServer() || Settings::Instance().GetNetPlayClient() ||
+      m_netplay_dialog->isVisible())
+    return false;
+
+  m_quickplay_joining = true;
+  const auto previous_method = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
+  const auto previous_code = Config::Get(Config::NETPLAY_HOST_CODE);
+  Common::ScopeGuard restore([&] {
+    Config::SetBaseOrCurrent(Config::NETPLAY_TRAVERSAL_CHOICE, previous_method);
+    Config::SetBaseOrCurrent(Config::NETPLAY_HOST_CODE, previous_code);
+    m_quickplay_joining = false;
+  });
+  // Same effective settings as a traversal browser session. The connect port is unused for
+  // traversal, and the configured traversal server/port stay in effect. Restore manual values.
+  Config::SetBaseOrCurrent(Config::NETPLAY_TRAVERSAL_CHOICE, std::string("traversal"));
+  Config::SetBaseOrCurrent(Config::NETPLAY_HOST_CODE, host_code.toStdString());
+  return NetPlayJoinInternal(false);
+}
+
+QString MainWindow::StartQuickPlayHost(u64 attempt)
+{
+  if (!Core::IsUninitialized(m_system) || Settings::Instance().GetNetPlayServer() ||
+      Settings::Instance().GetNetPlayClient() || m_netplay_dialog->isVisible())
+    return tr("Close the current game or NetPlay session before hosting Quick Play.");
+  const auto launcher = FindPPlusNetplayLauncher(m_game_list->GetGameListModel());
+  if (!launcher.game)
+    return launcher.error;
+  m_quickplay_host_attempt = attempt;
+  if (!NetPlayHostInternal(*launcher.game, attempt))
+    return tr("Could not create the Quick Play NetPlay host. Cancel and try again.");
+  return {};
+}
+
+void MainWindow::CancelQuickPlayHost(u64 attempt)
+{
+  if (!attempt || m_quickplay_host_attempt != attempt)
+    return;
+  m_quickplay_host_attempt = 0;
+  auto server = Settings::Instance().GetNetPlayServer();
+  if (server && Core::IsUninitialized(m_system) && server->PrepareQuickPlayCancel(attempt))
+  {
+    // Use the normal ownership teardown, without the manual Quit confirmation.
+    m_netplay_dialog->hide();
+    NetPlayQuit();
+  }
+}
+
 bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
+{
+  if (m_quickplay_host_attempt || m_quickplay_joining)
+    return false;
+  return NetPlayHostInternal(game, 0);
+}
+
+bool MainWindow::NetPlayHostInternal(const UICommon::GameFile& game, u64 quickplay_attempt)
 {
   if (!Core::IsUninitialized(m_system))
   {
@@ -1819,7 +1914,7 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   // Settings
   u16 host_port = Config::Get(Config::NETPLAY_HOST_PORT);
   const std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
-  const bool is_traversal = traversal_choice == "traversal";
+  const bool is_traversal = quickplay_attempt != 0 || traversal_choice == "traversal";
   const bool use_upnp = Config::Get(Config::NETPLAY_USE_UPNP);
 
   const std::string traversal_host = Config::Get(Config::NETPLAY_TRAVERSAL_SERVER);
@@ -1830,10 +1925,10 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
     host_port = Config::Get(Config::NETPLAY_LISTEN_PORT);
 
   // Create Server
-  Settings::Instance().ResetNetPlayServer(
-      new NetPlay::NetPlayServer(host_port, use_upnp, m_netplay_dialog,
-                                 NetPlay::NetTraversalConfig{is_traversal, traversal_host,
-                                                             traversal_port, traversal_port_alt}));
+  Settings::Instance().ResetNetPlayServer(new NetPlay::NetPlayServer(
+      host_port, use_upnp, m_netplay_dialog,
+      NetPlay::NetTraversalConfig{is_traversal, traversal_host, traversal_port, traversal_port_alt},
+      quickplay_attempt));
 
   if (!Settings::Instance().GetNetPlayServer()->is_connected)
   {
@@ -1849,11 +1944,14 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
                                                       m_game_list->GetNetPlayName(game));
 
   // Join our local server
-  return NetPlayJoin();
+  return NetPlayJoinInternal(quickplay_attempt != 0);
 }
 
 void MainWindow::NetPlayQuit()
 {
+  const auto attempt = std::exchange(m_quickplay_host_attempt, 0);
+  if (attempt && m_quickplay_controller)
+    m_quickplay_controller->OnHostClosed(attempt);
   Settings::Instance().ResetNetPlayClient();
   Settings::Instance().ResetNetPlayServer();
 #ifdef USE_DISCORD_PRESENCE

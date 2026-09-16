@@ -124,6 +124,8 @@ void ToolBar::MakeActions()
   m_fullscreen_action = addAction(tr("FullScr"), this, &ToolBar::FullScreenPressed);
   m_screenshot_action = addAction(tr("ScrShot"), this, &ToolBar::ScreenShotPressed);
   m_netplay_setup_action = addAction(tr("Netplay"), this, &ToolBar::NetPlaySetupDialogPressed);
+  m_quickplay_action = addAction(tr("Quick Play"), this, &ToolBar::QuickPlayPressed);
+  m_quickplay_action->setToolTip(tr("Quick Play local preview"));
 
   addSeparator();
 
@@ -141,7 +143,7 @@ void ToolBar::MakeActions()
        {m_open_action, m_pause_play_action, m_stop_action, m_stop_action, m_fullscreen_action,
         m_screenshot_action, m_config_action, m_graphics_action, m_controllers_action,
         m_step_action, m_step_over_action, m_step_out_action, m_skip_action, m_show_pc_action,
-        m_set_pc_action, m_netplay_setup_action, m_updater_action})
+        m_set_pc_action, m_netplay_setup_action, m_quickplay_action, m_updater_action})
   {
     items.emplace_back(widgetForAction(action));
   }
@@ -196,6 +198,7 @@ void ToolBar::UpdateIcons()
   m_fullscreen_action->setIcon(Resources::GetThemeIcon("fullscreen"));
   m_screenshot_action->setIcon(Resources::GetThemeIcon("screenshot"));
   m_netplay_setup_action->setIcon(Resources::GetThemeIcon("netplay"));
+  m_quickplay_action->setIcon(Resources::GetThemeIcon("netplay"));
   m_config_action->setIcon(Resources::GetThemeIcon("config"));
   m_controllers_action->setIcon(Resources::GetThemeIcon("gcpad"));
   m_graphics_action->setIcon(Resources::GetThemeIcon("graphics"));
