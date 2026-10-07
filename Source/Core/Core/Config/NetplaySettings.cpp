@@ -14,7 +14,7 @@ static constexpr u16 DEFAULT_LISTEN_PORT = 2626;
 const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR{
     {System::Main, "NetPlay", "QuickPlayCoordinator"}, "http://127.0.0.1:3000"};
 const Info<std::string> NETPLAY_QUICKPLAY_REGION{
-    {System::Main, "NetPlay", "QuickPlayRegion"}, "na-east"};
+    {System::Main, "NetPlay", "QuickPlayRegion"}, "us-east"};
 
 const Info<std::string> NETPLAY_TRAVERSAL_SERVER{{System::Main, "NetPlay", "TraversalServer"},
                                                  "stun.dolphin-emu.org"};

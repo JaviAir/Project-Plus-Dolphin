@@ -146,32 +146,107 @@ QuickPlayClient::Result QuickPlayClient::ParseResponse(int status, const QByteAr
   return result;
 }
 
-void QuickPlayClient::Start(const QString& base_url, const QString& region, Callback callback)
+QString QuickPlayClient::NormalizeCoordinatorUrl(const QString& input, QString* normalized)
 {
+  const QString trimmed = input.trimmed();
+  if (trimmed.isEmpty())
+    return tr("Enter a coordinator URL.");
+  const QUrl url(trimmed, QUrl::StrictMode);
+  if (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https"))
+    return tr("The coordinator URL must start with http:// or https://.");
+  if (!url.isValid() || url.host().isEmpty() || url.port() == 0)
+    return tr("Enter a valid coordinator URL with a hostname and optional port/path.");
+  if (!url.userInfo().isEmpty() || url.hasQuery() || url.hasFragment())
+    return tr("The coordinator URL cannot contain credentials, a query, or a fragment.");
+
+  // Keep the entered spelling/path; only trim whitespace and redundant trailing separators.
+  *normalized = trimmed;
+  while (normalized->endsWith(QLatin1Char('/')))
+    normalized->chop(1);
+  return {};
+}
+
+std::array<QuickPlayClient::Region, 12> QuickPlayClient::GetRegions()
+{
+  return {{
+      {QStringLiteral("us-nationwide"), tr("United States — Nationwide")},
+      {QStringLiteral("us-east"), tr("United States — East")},
+      {QStringLiteral("us-south"), tr("United States — South")},
+      {QStringLiteral("us-midwest"), tr("United States — Midwest")},
+      {QStringLiteral("us-west"), tr("United States — West")},
+      {QStringLiteral("canada"), tr("Canada")},
+      {QStringLiteral("mexico-central-america"), tr("Mexico / Central America")},
+      {QStringLiteral("caribbean"), tr("Caribbean")},
+      {QStringLiteral("south-america"), tr("South America")},
+      {QStringLiteral("europe"), tr("Europe")},
+      {QStringLiteral("asia"), tr("Asia")},
+      {QStringLiteral("australia"), tr("Australia")},
+  }};
+}
+
+QString QuickPlayClient::GetRegionLabel(const QString& region)
+{
+  for (const auto& choice : GetRegions())
+  {
+    if (region == choice.value)
+      return choice.label;
+  }
+  return region;
+}
+
+QString QuickPlayClient::NormalizeRegion(const QString& region)
+{
+  const QString normalized = region.trimmed().toLower();
+  if (normalized == QStringLiteral("na-east"))
+    return QStringLiteral("us-east");
+  if (normalized == QStringLiteral("na-central"))
+    return QStringLiteral("us-midwest");
+  if (normalized == QStringLiteral("na-west"))
+    return QStringLiteral("us-west");
+  if (normalized == QStringLiteral("eu"))
+    return QStringLiteral("europe");
+
+  for (const auto& region_choice : GetRegions())
+  {
+    if (normalized == region_choice.value)
+      return region_choice.value;
+  }
+  // Exact matching makes even case changes significant for unknown custom regions.
+  return region;
+}
+
+bool QuickPlayClient::IsValidRegion(const QString& region)
+{
+  return IsField(region, 32);
+}
+
+void QuickPlayClient::Start(const QString& base_url, const QString& region_input, Callback callback)
+{
+  const QString region = NormalizeRegion(region_input);
   Cancel();
   auto attempt = std::make_shared<Attempt>();
   m_attempt = attempt;
   m_callback = std::move(callback);
   m_pending = true;
 
-  const QUrl url(base_url, QUrl::StrictMode);
+  QString normalized_url;
+  const QString url_error = NormalizeCoordinatorUrl(base_url, &normalized_url);
   const QString build = QString::fromStdString(Common::GetScmRevGitStr());
   const QString version = QString::fromStdString(Common::GetScmDescStr());
-  if (!url.isValid() || url.host().isEmpty() ||
-      (url.scheme() != QStringLiteral("http") && url.scheme() != QStringLiteral("https")) ||
-      !url.userInfo().isEmpty() || url.hasQuery() || url.hasFragment() || !IsField(region, 32) ||
-      !IsField(build, 128) || !IsField(version, 64))
+  if (!url_error.isEmpty() || !IsValidRegion(region) || !IsField(build, 128) ||
+      !IsField(version, 64))
   {
     Deliver(attempt, {State::Error,
-                      tr("Invalid Quick Play configuration or build metadata. Check "
-                         "[NetPlay] QuickPlayCoordinator and QuickPlayRegion in Dolphin.ini."),
+                      !url_error.isEmpty() ?
+                          url_error :
+                          tr("Invalid Quick Play region or build metadata. Check Quick Play "
+                             "Settings and use a compatible Dolphin build."),
                       {},
                       {}});
     return;
   }
-  attempt->base_url = url.toString(QUrl::FullyEncoded).toStdString();
-  while (attempt->base_url.back() == '/')
-    attempt->base_url.pop_back();
+  attempt->base_url =
+      QUrl(normalized_url, QUrl::StrictMode).toString(QUrl::FullyEncoded).toStdString();
 
   const QJsonObject fields{
       {QStringLiteral("protocol"), QUICKPLAY_PROTOCOL},

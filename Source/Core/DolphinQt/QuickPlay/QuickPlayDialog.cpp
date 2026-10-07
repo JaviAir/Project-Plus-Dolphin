@@ -6,6 +6,7 @@
 #include <QDialogButtonBox>
 #include <QFontMetrics>
 #include <QLabel>
+#include <QPushButton>
 #include <QString>
 #include <QVBoxLayout>
 
@@ -18,8 +19,8 @@ QuickPlayDialog::QuickPlayDialog(QuickPlayController& controller, QWidget* paren
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(18, 18, 18, 18);
   layout->setSpacing(12);
-  auto* preview = new QLabel(tr("Quick Play pairs players through the coordinator. "
-                                "The host creates a room; the opponent joins automatically."));
+  auto* preview = new QLabel(tr("Quick Play pairs players through the Coordinator Server. "
+                                "The host creates a room and the opponent joins automatically."));
   preview->setWordWrap(true);
   layout->addWidget(preview);
 
@@ -29,6 +30,13 @@ QuickPlayDialog::QuickPlayDialog(QuickPlayController& controller, QWidget* paren
   // Reserve space for multiline errors even while displaying the short Searching text.
   m_status->setMinimumHeight(m_status->fontMetrics().lineSpacing() * 5);
   layout->addWidget(m_status, 1);
+
+  m_region = new QLabel;
+  m_region->setObjectName(QStringLiteral("quickplay_search_region"));
+  m_region->setTextFormat(Qt::PlainText);
+  m_region->setAlignment(Qt::AlignCenter);
+  m_region->setWordWrap(true);
+  layout->addWidget(m_region);
 
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
   connect(buttons, &QDialogButtonBox::rejected, this, &QuickPlayDialog::reject);
@@ -54,6 +62,10 @@ void QuickPlayDialog::done(int result)
 void QuickPlayDialog::UpdateState(QuickPlayController::State state)
 {
   m_animation_timer.stop();
+
+  m_region->setText(
+      tr("Region: %1").arg(QuickPlayClient::GetRegionLabel(m_controller.GetRegion())));
+  m_region->setVisible(state != QuickPlayController::State::Idle);
 
   switch (state)
   {

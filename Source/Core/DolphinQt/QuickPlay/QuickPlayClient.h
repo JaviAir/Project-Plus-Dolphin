@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <memory>
 
@@ -42,6 +43,17 @@ public:
   ~QuickPlayClient() override;
 
   void Start(const QString& base_url, const QString& region, Callback callback);
+  // Shared by settings and admission. Returns a user-facing error, or an empty string.
+  static QString NormalizeCoordinatorUrl(const QString& input, QString* normalized);
+  struct Region
+  {
+    QString value;
+    QString label;
+  };
+  static std::array<Region, 12> GetRegions();
+  static QString GetRegionLabel(const QString& region);
+  static QString NormalizeRegion(const QString& region);
+  static bool IsValidRegion(const QString& region);
   void Poll();
   void PollMatch(const QString& match_id);
   static Result ParseMatchResponse(int status, const QByteArray& body);

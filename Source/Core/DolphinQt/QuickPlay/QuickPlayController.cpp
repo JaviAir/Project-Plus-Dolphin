@@ -41,10 +41,11 @@ bool QuickPlayController::Start()
   ++m_attempt;
   m_entered_queue = false;
   m_error_message.clear();
+  m_region = QuickPlayClient::NormalizeRegion(
+      QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION)));
   SetState(State::Searching);
   m_client.Start(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)),
-                 QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION)),
-                 [this, attempt = m_attempt](QuickPlayClient::Result result) {
+                 m_region, [this, attempt = m_attempt](QuickPlayClient::Result result) {
                    if (attempt == m_attempt &&
                        (m_state == State::Searching || m_state == State::PublishingHostCode ||
                         m_state == State::WaitingForHost))

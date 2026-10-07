@@ -48,6 +48,7 @@ class NetPlaySetupDialog;
 class NetworkWidget;
 class QuickPlayController;
 class QuickPlayDialog;
+class QuickPlaySettingsDialog;
 class RegisterWidget;
 class RenderWidget;
 class SearchBar;
@@ -184,6 +185,7 @@ private:
   void ShowNetPlaySetupDialog();
   void ShowNetPlayBrowser();
   void StartQuickPlay();
+  void ShowQuickPlaySettings();
   void ShowFIFOPlayer();
   void ShowSkylanderPortal();
   void ShowInfinityBase();
@@ -286,6 +288,7 @@ private:
   NetPlaySetupDialog* m_netplay_setup_dialog;
   QuickPlayController* m_quickplay_controller = nullptr;
   QuickPlayDialog* m_quickplay_dialog = nullptr;
+  QuickPlaySettingsDialog* m_quickplay_settings_dialog = nullptr;
   static constexpr int num_gc_controllers = 4;
   std::array<GCTASInputWindow*, num_gc_controllers> m_gc_tas_input_windows{};
   std::array<GBATASInputWindow*, num_gc_controllers> m_gba_tas_input_windows{};

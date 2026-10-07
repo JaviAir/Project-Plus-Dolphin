@@ -25,6 +25,7 @@ private:
 
   QuickPlayController& m_controller;
   QLabel* m_status;
+  QLabel* m_region;
   QTimer m_animation_timer;
   int m_dots = 1;
 };

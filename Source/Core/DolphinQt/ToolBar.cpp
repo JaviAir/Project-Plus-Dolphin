@@ -8,6 +8,8 @@
 
 #include <QAction>
 #include <QIcon>
+#include <QPainter>
+#include <QToolButton>
 
 #include "Core/Core.h"
 #include "Core/System.h"
@@ -16,6 +18,78 @@
 #include "DolphinQt/Settings.h"
 
 static QSize ICON_SIZE(32, 32);
+
+static QIcon MakeQuickPlaySettingsIcon(const QIcon& quickplay_icon)
+{
+  // Use Quickplay's strongest solid accent so gradients do not dull the gear.
+  const QImage reference = quickplay_icon.pixmap(ICON_SIZE).toImage();
+  QColor accent = Qt::gray;
+  int strongest_accent = -1;
+  for (int y = 0; y < reference.height(); ++y)
+  {
+    for (int x = 0; x < reference.width(); ++x)
+    {
+      const QColor color = reference.pixelColor(x, y);
+      if (color.alpha() < 250)
+        continue;
+      const int strength = color.hsvSaturation() * color.value();
+      if (strength > strongest_accent)
+      {
+        strongest_accent = strength;
+        accent = color;
+        accent.setAlpha(255);
+      }
+    }
+  }
+
+  const QIcon gear =
+      QIcon::fromTheme(QStringLiteral("preferences-system"), Resources::GetThemeIcon("config"));
+  QIcon result;
+  // Keep a 32px canvas, with a 24px gear lowered slightly beside the Quickplay icon.
+  for (int scale : {1, 2, 3, 4})
+  {
+    QPixmap pixmap(ICON_SIZE * scale);
+    pixmap.setDevicePixelRatio(scale);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    gear.paint(&painter, QRect(4, 6, 24, 24));
+    painter.end();
+    // Convert shading to coverage, not darker RGB: the visible strokes must use
+    // exactly Quick Play's accent. Opaque dark detail in system icons becomes cutouts.
+    QImage tinted = pixmap.toImage();
+    int darkest = 255;
+    int brightest = 0;
+    for (int y = 0; y < tinted.height(); ++y)
+    {
+      for (int x = 0; x < tinted.width(); ++x)
+      {
+        const QColor color = tinted.pixelColor(x, y);
+        if (color.alpha() < 128)
+          continue;
+        const int shade = qGray(color.rgb());
+        darkest = std::min(darkest, shade);
+        brightest = std::max(brightest, shade);
+      }
+    }
+    for (int y = 0; y < tinted.height(); ++y)
+    {
+      for (int x = 0; x < tinted.width(); ++x)
+      {
+        const QColor color = tinted.pixelColor(x, y);
+        const int coverage = brightest > darkest ?
+                                 std::clamp((qGray(color.rgb()) - darkest) * 510 /
+                                                (brightest - darkest),
+                                            0, 255) :
+                                 255;
+        QColor pixel = accent;
+        pixel.setAlpha(color.alpha() * coverage / 255);
+        tinted.setPixelColor(x, y, pixel);
+      }
+    }
+    result.addPixmap(QPixmap::fromImage(tinted));
+  }
+  return result;
+}
 
 ToolBar::ToolBar(QWidget* parent) : QToolBar(parent)
 {
@@ -124,9 +198,23 @@ void ToolBar::MakeActions()
   m_fullscreen_action = addAction(tr("FullScr"), this, &ToolBar::FullScreenPressed);
   m_screenshot_action = addAction(tr("ScrShot"), this, &ToolBar::ScreenShotPressed);
   m_netplay_setup_action = addAction(tr("Netplay"), this, &ToolBar::NetPlaySetupDialogPressed);
-  m_quickplay_action = addAction(tr("Quick Play"), this, &ToolBar::QuickPlayPressed);
-  m_quickplay_action->setToolTip(tr("Quick Play local preview"));
+  addSeparator();
+  m_quickplay_action = addAction(tr("Quickplay"), this, &ToolBar::QuickPlayPressed);
+  m_quickplay_action->setToolTip(tr("Start Quick Play"));
+  m_quickplay_settings_action =
+      addAction(tr("Quick Play Settings"), this, &ToolBar::QuickPlaySettingsPressed);
+  m_quickplay_settings_action->setToolTip(tr("Quick Play Settings"));
+  auto* settings_button =
+      qobject_cast<QToolButton*>(widgetForAction(m_quickplay_settings_action));
+  // Reserve the same caption row as Quick Play so their icons align vertically.
+  m_quickplay_settings_action->setIconText(QStringLiteral(" "));
+  settings_button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+  settings_button->setAccessibleName(tr("Quick Play Settings"));
+  settings_button->setFixedWidth(36);
 
+  auto* quickplay_spacing = new QWidget(this);
+  quickplay_spacing->setFixedWidth(10);
+  addWidget(quickplay_spacing);
   addSeparator();
 
   m_config_action = addAction(tr("Config"), this, &ToolBar::SettingsPressed);
@@ -175,6 +263,16 @@ void ToolBar::UpdatePausePlayButtonState(const bool playing_state)
   }
 }
 
+void ToolBar::SetQuickPlaySettingsOpen(bool open)
+{
+  m_quickplay_action->setEnabled(!open);
+}
+
+void ToolBar::SetQuickPlayActive(bool active)
+{
+  m_quickplay_settings_action->setEnabled(!active);
+}
+
 void ToolBar::UpdateIcons()
 {
   m_step_action->setIcon(Resources::GetThemeIcon("debugger_step_in"));
@@ -199,6 +297,7 @@ void ToolBar::UpdateIcons()
   m_screenshot_action->setIcon(Resources::GetThemeIcon("screenshot"));
   m_netplay_setup_action->setIcon(Resources::GetThemeIcon("netplay"));
   m_quickplay_action->setIcon(Resources::GetThemeIcon("netplay"));
+  m_quickplay_settings_action->setIcon(MakeQuickPlaySettingsIcon(m_quickplay_action->icon()));
   m_config_action->setIcon(Resources::GetThemeIcon("config"));
   m_controllers_action->setIcon(Resources::GetThemeIcon("gcpad"));
   m_graphics_action->setIcon(Resources::GetThemeIcon("graphics"));

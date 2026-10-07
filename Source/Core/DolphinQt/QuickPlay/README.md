@@ -7,35 +7,96 @@ normal NetPlay lobby. Buffer selection and game start remain manual.
 
 Core MVP is complete; cross-platform/cross-network and manual NetPlay validation
 were reported by the maintainer. See [tester instructions](TESTING.md) and
-[release-prep audit](RELEASE_PREP.md). Phase 7 is not implemented.
+[release-prep audit](RELEASE_PREP.md). Phase 7 settings are implemented; new
+Windows/Linux runtime acceptance is still pending.
 
 ## Configuration
 
-In the active **Dolphin.ini**, add to the existing `[NetPlay]` section:
+Click the **gear button beside Quick Play** to open Quick Play Settings directly.
+A toolbar separator groups Quick Play and its settings button apart from Netplay.
+The compact settings gear takes its solid green directly from the Quickplay
+icon and sits slightly lower beside it. Extra space before Config groups the pair together. The main button
+still starts searching immediately. Opening Settings creates no controller, attempt,
+HTTP request, queue ticket, NetPlay host, or client.
 
-```ini
-[NetPlay]
-QuickPlayCoordinator = http://127.0.0.1:3000
-QuickPlayRegion = na-east
-```
+Quick Play is disabled while Settings is open; Save, Cancel, Escape, or closing
+Settings enables it again. Settings is disabled immediately when Quick Play is
+clicked and remains disabled until the attempt is dismissed, including errors
+and connection results. The searching dialog has no Settings button. It displays
+**Region: <friendly label>** from the attempt's region snapshot (or the exact custom
+value). Only one region is searched; multi-region matching remains deferred.
 
-These are the defaults, defined once in `Core/Config/NetplaySettings.cpp`. Edit
-while Dolphin is closed, then restart. Normal Linux configuration is
-`~/.config/project-plus-dolphin/Dolphin.ini`; with `--user <directory>`, use
-`<directory>/Config/Dolphin.ini`. No settings UI is added in this phase.
+Save applies without restarting Dolphin or editing INI files. Cancel discards
+unsaved edits. Settings reloads current config whenever reopened.
 
-Temporary command-line overrides are also supported by Dolphin's existing loader:
+Settings use the existing `Main.NetPlay.QuickPlayCoordinator` and
+`Main.NetPlay.QuickPlayRegion` definitions in `Core/Config/NetplaySettings.cpp`.
+Defaults are `http://127.0.0.1:3000` and `us-east`. Save updates effective config
+and persists the base config via Dolphin's config system. If an initial value came
+from a temporary `-C Main.NetPlay.QuickPlayCoordinator=...` or region override,
+Save explicitly replaces it for this run and persists the chosen value. Supplying
+that command-line override again on a later launch still overrides the saved value.
 
-```sh
-project-plus-dolphin -C Main.NetPlay.QuickPlayCoordinator=http://192.168.1.20:3000 -C Main.NetPlay.QuickPlayRegion=na-east
-```
+| Display label | Saved/wire value |
+| --- | --- |
+| United States — Nationwide | `us-nationwide` |
+| United States — East | `us-east` |
+| United States — South | `us-south` |
+| United States — Midwest | `us-midwest` |
+| United States — West | `us-west` |
+| Canada | `canada` |
+| Mexico / Central America | `mexico-central-america` |
+| Caribbean | `caribbean` |
+| South America | `south-america` |
+| Europe | `europe` |
+| Asia | `asia` |
+| Australia | `australia` |
 
-The client snapshots settings at each attempt. It accepts absolute HTTP/HTTPS
-URLs, including an optional path prefix, strips trailing slashes, and appends
-`/v1/queue`. Credentials, queries, fragments, empty hosts and other schemes are
-rejected. Redirects are not followed. HTTPS uses the existing curl TLS behavior.
-Region must be 1–32 printable ASCII characters without whitespace; comparison is
-case-sensitive, with no geographic inference or fallback.
+Legacy mappings are `na-east` → `us-east`, `na-central` → `us-midwest`,
+`na-west` → `us-west`, and `eu` → `europe`. Known values and aliases are
+case/whitespace normalized when Settings loads and before queue admission, even
+if Settings has never been opened. Opening/Cancel does not rewrite config; Save
+persists the canonical selection. Unknown custom values retain their exact spelling
+and case. The canonical wire/config spelling is `caribbean`, labeled Caribbean.
+Because Rust still compares exact strings, older clients sending legacy values
+will not pair with clients sending the new canonical values. Use matching updated
+clients; no server aliases or matching changes are introduced.
+
+An unknown region appears as **Custom (preserved): value**;
+it stays byte-for-byte unchanged unless another region is selected. Invalid custom
+values must be replaced with a listed region before saving. Valid custom values
+are 1–32 printable ASCII characters without whitespace. The dropdown is not
+editable. Rust still matches regions exactly; there is no geographic inference,
+expansion, or server-side case folding.
+
+URLs require absolute HTTP/HTTPS with a host and optional port/path prefix.
+Surrounding whitespace and trailing slashes are removed; meaningful paths are
+preserved. Credentials, queries, fragments, invalid ports and malformed/empty
+URLs are rejected with inline feedback. API requests append paths to the base URL.
+Redirects are not followed. HTTPS uses the existing curl TLS behavior.
+
+**Test Connection to Coordinator Server** checks the currently entered URL, including unsaved edits,
+with `GET <base>/health`. HTTP 200 with a JSON object containing `"status":"ok"`
+shows **Connected**; transport/timeout, HTTP status, and invalid-response errors
+are reported separately. This verifies health only, not build compatibility or
+traversal. It neither saves settings nor creates a ticket or changes matchmaking
+state. A separate `Common::AsyncWorkThread` runs `Common::HttpRequest` with a
+five-second total timeout. The settings dialog is retained by its owning window;
+closing it invalidates delivery without waiting. Editing the URL also invalidates
+old results. Final owner destruction cancels and drains the bounded worker before
+QObject teardown. DNS timeout bounds require an asynchronous curl resolver, as
+with existing Quick Play requests.
+
+The controller already reads current in-memory config at every Start. Each attempt
+retains its own endpoint/region snapshot, so subsequent config changes cannot
+redirect polls, host publication, or cancellation to a different coordinator,
+or change the displayed search region.
+
+Multi-region selection is a deferred post-Phase-7 stretch goal. A future
+`regions = ["us-east", "us-south"]` representation and non-empty-intersection
+matching require deliberate Dolphin config, queue admission JSON, Rust schema,
+matching logic, migration/backward compatibility, and UI design. Current matching
+continues to use one region string. Phase 8 is unchanged and has not begun.
 
 ## Exact fingerprint
 
@@ -44,7 +105,7 @@ case-sensitive, with no geographic inference or fallback.
 | `protocol` | Integer `1`, the Quick Play API/compatibility protocol |
 | `build` | Exact `Common::GetScmRevGitStr()` (`SCM_REV_STR`, generated from `git rev-parse HEAD`) |
 | `pplus_version` | Exact `Common::GetScmDescStr()` (`SCM_DESC_STR`), informational Dolphin/P+ build description |
-| `region` | `QuickPlayRegion`, default `na-east` |
+| `region` | `QuickPlayRegion`, default `us-east` |
 | `platform` | `windows`, `linux`, `macos`, or `other` |
 | `player_nonce` | New `QUuid::createUuid()` per attempt, without braces |
 

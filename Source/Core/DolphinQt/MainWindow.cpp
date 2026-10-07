@@ -118,6 +118,7 @@
 #include "DolphinQt/QuickPlay/QuickPlayController.h"
 #include "DolphinQt/QuickPlay/QuickPlayDialog.h"
 #include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
+#include "DolphinQt/QuickPlay/QuickPlaySettingsDialog.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/FileOpenEventFilter.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
@@ -724,6 +725,7 @@ void MainWindow::ConnectToolBar()
   connect(m_tool_bar, &ToolBar::ScreenShotPressed, this, &MainWindow::ScreenShot);
   connect(m_tool_bar, &ToolBar::NetPlaySetupDialogPressed, this, &MainWindow::ShowNetPlaySetupDialog);
   connect(m_tool_bar, &ToolBar::QuickPlayPressed, this, &MainWindow::StartQuickPlay);
+  connect(m_tool_bar, &ToolBar::QuickPlaySettingsPressed, this, &MainWindow::ShowQuickPlaySettings);
   connect(m_tool_bar, &ToolBar::SettingsPressed, this, &MainWindow::ShowSettingsWindow);
   connect(m_tool_bar, &ToolBar::ControllersPressed, this, &MainWindow::ShowControllersWindow);
   connect(m_tool_bar, &ToolBar::GraphicsPressed, this, &MainWindow::ShowGraphicsWindow);
@@ -1535,8 +1537,29 @@ void MainWindow::ShowGraphicsWindow()
   m_settings_window->SelectPane(SettingsWindowPaneIndex::Graphics);
 }
 
+void MainWindow::ShowQuickPlaySettings()
+{
+  if (m_quickplay_controller &&
+      m_quickplay_controller->GetState() != QuickPlayController::State::Idle)
+    return;
+
+  // Settings access must not construct a controller or start a matchmaking attempt.
+  m_tool_bar->SetQuickPlaySettingsOpen(true);
+  if (!m_quickplay_settings_dialog)
+  {
+    m_quickplay_settings_dialog = new QuickPlaySettingsDialog(this);
+    connect(m_quickplay_settings_dialog, &QDialog::finished, this,
+            [this] { m_tool_bar->SetQuickPlaySettingsOpen(false); });
+  }
+  m_quickplay_settings_dialog->Open();
+}
+
 void MainWindow::StartQuickPlay()
 {
+  if (m_quickplay_settings_dialog && m_quickplay_settings_dialog->isVisible())
+    return;
+
+  m_tool_bar->SetQuickPlayActive(true);
   if (!m_quickplay_controller)
   {
     m_quickplay_controller =
@@ -1545,6 +1568,10 @@ void MainWindow::StartQuickPlay()
                                 [this](const QString& code) { return JoinQuickPlayHost(code); }, this);
     connect(m_netplay_dialog, &NetPlayDialog::HostTraversalChanged, m_quickplay_controller,
             &QuickPlayController::OnHostTraversalChanged);
+    connect(m_quickplay_controller, &QuickPlayController::StateChanged, this,
+            [this](QuickPlayController::State state) {
+              m_tool_bar->SetQuickPlayActive(state != QuickPlayController::State::Idle);
+            });
     m_quickplay_dialog = new QuickPlayDialog(*m_quickplay_controller, this);
   }
 
