@@ -1,9 +1,13 @@
-# Quick Play coordinator client (Phase 6)
+# Quick Play coordinator client
 
 Quick Play queues and pairs through Rust. The assigned host locates Netplay Launcher,
 creates an unlisted normal NetPlay room, obtains its traversal code internally, and
 publishes it. The assigned client polls for the code and automatically joins the
 normal NetPlay lobby. Buffer selection and game start remain manual.
+
+Core MVP is complete; cross-platform/cross-network and manual NetPlay validation
+were reported by the maintainer. See [tester instructions](TESTING.md) and
+[release-prep audit](RELEASE_PREP.md). Phase 7 is not implemented.
 
 ## Configuration
 
@@ -44,13 +48,10 @@ case-sensitive, with no geographic inference or fallback.
 | `platform` | `windows`, `linux`, `macos`, or `other` |
 | `player_nonce` | New `QUuid::createUuid()` per attempt, without braces |
 
-For the current checkout, `build` is
-`42f1332e2a590fdc5588c31214ecdfa9c688431a`. The current Linux generated description
-is `v3.2.0-2606a-dirty`. CMake derives the description from
-`git describe --always --long --dirty`, removing the hash/zero-count suffix;
-the Windows generator omits `--dirty`. Send each generator's exact description,
-not a hard-coded `v3.2.0`. It is informational and is not an assertion about the
-installed game files. Only protocol/build/region determine pairing.
+The validated source baseline is `341e758e56c29a6c2268053ef3b0b60ca6de9cc9`.
+Use the actual artifact's generated revision, not a hard-coded value. CMake derives
+the informational description from `git describe --always --long --dirty`;
+the Windows generator omits `--dirty`. Only protocol/build/region determine pairing.
 
 The build key matches Dolphin's existing NetPlay revision handshake and has no
 platform suffix. **Uncommitted source differences are not represented in this
@@ -157,78 +158,11 @@ then processed and leaves an already-open lobby intact. If cancellation runs in 
 nested event loop during setup, the generation changes immediately and the result
 is ignored when setup unwinds. This phase does not add asynchronous NetPlay setup.
 
-## Manual Phase 6 build/runtime checkpoint
+## Verification and release preparation
 
-Run the incremental build manually, using the existing cache:
-
-```sh
-cmake --build /home/joemarchy/Projects/pplus/builds/plus-dolphin-baseline --parallel 4
-```
-
-1. Start Rust directly in a terminal:
-
-   ```sh
-   cd ~/Projects/pplus/pplus-matchmaker
-   cargo run --locked
-   ```
-
-2. Launch two instances of the same newly built executable, each in its own terminal:
-
-   ```sh
-   /home/joemarchy/Projects/pplus/builds/plus-dolphin-baseline/Binaries/project-plus-dolphin --user /tmp/pplus-quickplay-a -C Main.NetPlay.QuickPlayCoordinator=http://127.0.0.1:3000
-   ```
-
-   ```sh
-   /home/joemarchy/Projects/pplus/builds/plus-dolphin-baseline/Binaries/project-plus-dolphin --user /tmp/pplus-quickplay-b -C Main.NetPlay.QuickPlayCoordinator=http://127.0.0.1:3000
-   ```
-
-3. In both profiles set Config -> Paths -> Launcher Path to
-   `/home/joemarchy/Projects/pplus/Plus-Dolphin/Data/user/Launcher/`; restart/refresh
-   until Netplay Launcher appears. Use equal regions (default na-east). Enable
-   NETPLAY Info logging. Internet traversal access is required even with local Rust.
-
-4. Click Quick Play on A, then B. A hosts automatically and reaches Room ready.
-   B waits for host, shows Connecting then Connected, and opens the same normal
-   lobby. Verify both player names in both lobby lists. Copy no code and click no
-   manual Join. Manual Start is expected; no automatic buffer/start is implemented.
-
-5. Dismiss Quick Play and quit both normal lobbies. Repeat with B queued first:
-   B must host and A must join. Before a further pair, enable Show in server browser
-   in manual hosting with a recognizable room name/valid index region, and verify
-   that manual room is listed. Quit it, pair through Quick Play with that checkbox
-   still enabled, and verify the Quick Play room is absent from the public browser.
-   After quitting, manual hosting must retain its previous index preference.
-
-6. For a longer host wait, quit both sessions and relaunch the intended host with
-   the additional override `-C Main.NetPlay.TraversalServer=192.0.2.1`. Queue it
-   first, then the normal client. Cancel the client while Waiting for host; leave
-   it open beyond 30 seconds and verify no delayed join. Repeat Cancel/reopen,
-   Escape and window-close, then restore the host's normal traversal configuration
-   and confirm a new pair succeeds. Also click Cancel as Connecting appears:
-   if the synchronous join already opened a lobby, that lobby must remain usable.
-
-7. Repeat the delayed-host setup, but stop Rust with Ctrl-C while the client waits.
-   Expect controlled Error within the current request deadline, no retry loop or
-   later join. Restart Rust and pair again. To exercise HTTP 410 directly, restart
-   Rust while both clients are waiting for host setup: if the next GET reaches the
-   restarted server it sees expired (a GET during downtime instead sees transport
-   Error). Closing/cancelling the host before join must similarly produce expiry
-   or the ordinary connection failure. Remove the traversal override afterward.
-
-8. Verify ordinary manual Host, Join by traversal code, and joining through Server
-   Browser still work; Quick Play must refuse to replace an existing session.
-   Close/reopen Quick Play rapidly and quit Dolphin during waiting/connection;
-   verify no stale join, crash or persistent hang. Windows build/moc and the same
-   two-machine test remain pending. Malformed/missing/overlong/non-alphanumeric
-   ready payloads require a separate controlled HTTP fixture for runtime testing;
-   source checks alone do not establish those runtime results.
-
-For two machines, start Rust with `MATCHMAKER_BIND=0.0.0.0:3000 cargo run --locked`
-and point both same-build clients at `http://<coordinator-LAN-IP>:3000`.
-
-The Phase 5 scratch proxy did not print VERIFIED in the user's test, although the
-host reached its post-publication state. That helper is deferred test-infrastructure
-cleanup; Phase 6 neither uses nor modifies it. Successful automatic join against
-Rust directly is the definitive code-delivery acceptance test.
-
-**Stop after Phase 6 at the manual build/runtime checkpoint.**
+Use [TESTING.md](TESTING.md) for installation and the compact regression checklist,
+and [RELEASE_PREP.md](RELEASE_PREP.md) for maintainer build/artifact checks.
+The historical Phase 5 proxy and `/tmp/phase5_probe.py` are unnecessary: clients
+communicate directly with Rust or its reachable HTTPS endpoint. No scratch helper
+is a runtime, build, testing, or packaging prerequisite. Use separate physical
+networks for traversal acceptance; same-machine testing is not that acceptance test.
