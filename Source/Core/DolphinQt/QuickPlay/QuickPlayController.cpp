@@ -62,9 +62,9 @@ void QuickPlayController::Cancel()
   m_host_code.clear();
   m_match_id.clear();
   m_client.Cancel();
-  if (!m_creating_host)
+  if (!m_creating_host && m_state != State::NetPlayConnected)
     m_cancel_host(cancelled_attempt);
-  if (m_state != State::Idle)
+  if (m_state != State::Idle && m_state != State::NetPlayConnected)
     INFO_LOG_FMT(NETPLAY, "QuickPlay: cancelled");
   m_error_message.clear();
   SetState(State::Idle);
@@ -159,6 +159,23 @@ void QuickPlayController::BeginJoin(std::uint64_t attempt)
   }
   INFO_LOG_FMT(NETPLAY, "QuickPlay: NetPlay join started");
   INFO_LOG_FMT(NETPLAY, "QuickPlay: client connection established");
+  Complete();
+}
+
+void QuickPlayController::OnHostOpponentConnected(quint64 attempt)
+{
+  // The peer can arrive before the publication HTTP response reaches the GUI thread.
+  if (attempt != m_attempt ||
+      (m_state != State::PublishingHostCode && m_state != State::WaitingForOpponent))
+    return;
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: host opponent connected");
+  Complete();
+}
+
+void QuickPlayController::Complete()
+{
+  m_poll_timer.stop();
+  m_setup_timer.stop();
   // No connected acknowledgement exists. One bounded DELETE releases the rendezvous;
   // the normal NetPlay session now owns the connection independently.
   m_client.Cancel();

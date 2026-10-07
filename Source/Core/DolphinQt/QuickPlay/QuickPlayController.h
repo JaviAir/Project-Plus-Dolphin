@@ -47,6 +47,7 @@ public:
   bool Start();
   void Cancel();
   void OnHostTraversalChanged(quint64 attempt, const QString& code, bool failed);
+  void OnHostOpponentConnected(quint64 attempt);
   void OnHostClosed(std::uint64_t attempt);
 
 signals:
@@ -59,6 +60,7 @@ private:
   void BeginHost(std::uint64_t attempt);
   void BeginJoin(std::uint64_t attempt);
   void Fail(QString error);
+  void Complete();
   StartHost m_start_host;
   CancelHost m_cancel_host;
   JoinHost m_join_host;

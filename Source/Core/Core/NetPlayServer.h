@@ -43,6 +43,7 @@ public:
                 const NetTraversalConfig& traversal_config, u64 quickplay_attempt = 0);
   // Atomically close admission only if no remote player has joined this Quick Play room.
   bool PrepareQuickPlayCancel(u64 attempt);
+  u64 GetQuickPlayAttempt() const { return m_quickplay_attempt; }
   ~NetPlayServer() override;
 
   bool ChangeGame(const SyncIdentifier& sync_identifier, const std::string& netplay_name);

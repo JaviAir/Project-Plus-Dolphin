@@ -1568,8 +1568,12 @@ void MainWindow::StartQuickPlay()
                                 [this](const QString& code) { return JoinQuickPlayHost(code); }, this);
     connect(m_netplay_dialog, &NetPlayDialog::HostTraversalChanged, m_quickplay_controller,
             &QuickPlayController::OnHostTraversalChanged);
+    connect(m_netplay_dialog, &NetPlayDialog::QuickPlayOpponentConnected, m_quickplay_controller,
+            &QuickPlayController::OnHostOpponentConnected);
     connect(m_quickplay_controller, &QuickPlayController::StateChanged, this,
             [this](QuickPlayController::State state) {
+              if (state == QuickPlayController::State::NetPlayConnected)
+                m_quickplay_host_attempt = 0;  // The normal lobby now owns the session.
               m_tool_bar->SetQuickPlayActive(state != QuickPlayController::State::Idle);
             });
     m_quickplay_dialog = new QuickPlayDialog(*m_quickplay_controller, this);

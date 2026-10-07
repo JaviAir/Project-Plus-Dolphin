@@ -14,15 +14,17 @@ Windows/Linux runtime acceptance is still pending.
 
 Click the **gear button beside Quick Play** to open Quick Play Settings directly.
 A toolbar separator groups Quick Play and its settings button apart from Netplay.
-The compact settings gear takes its solid green directly from the Quickplay
-icon and sits slightly lower beside it. Extra space before Config groups the pair together. The main button
-still starts searching immediately. Opening Settings creates no controller, attempt,
-HTTP request, queue ticket, NetPlay host, or client.
+The compact settings gear uses the Quickplay icon's solid accent color and the
+same drawn shape on every platform. Extra space before Config groups the pair
+together. The main button still starts searching immediately. Opening Settings
+creates no controller, attempt, HTTP request, queue ticket, NetPlay host, or client.
 
 Quick Play is disabled while Settings is open; Save, Cancel, Escape, or closing
 Settings enables it again. Settings is disabled immediately when Quick Play is
-clicked and remains disabled until the attempt is dismissed, including errors
-and connection results. The searching dialog has no Settings button. It displays
+clicked and remains disabled until the attempt is dismissed, including errors.
+Successful lobby handoff closes the searching dialog automatically on both host
+and client, restoring settings access without closing the connected lobby.
+The searching dialog has no Settings button. It displays
 **Region: <friendly label>** from the attempt's region snapshot (or the exact custom
 value). Only one region is searched; multi-region matching remains deferred.
 

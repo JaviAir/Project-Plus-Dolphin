@@ -100,8 +100,8 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
     m_status->setText(tr("Connecting..."));
     break;
   case QuickPlayController::State::NetPlayConnected:
-    m_status->setText(tr("Connected"));
-    break;
+    accept();
+    return;
   case QuickPlayController::State::Error:
     m_status->setText(tr("Error\n%1").arg(m_controller.GetErrorMessage()));
     break;

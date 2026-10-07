@@ -742,6 +742,10 @@ void NetPlayDialog::UpdateGUI()
   if (!server)
     return;
 
+  // The host's local client has received the remote player's successful admission.
+  if (server->GetQuickPlayAttempt() != 0 && players.size() > 1)
+    emit QuickPlayOpponentConnected(server->GetQuickPlayAttempt());
+
   const bool is_local_ip_selected = m_room_box->currentIndex() > (m_use_traversal ? 1 : 0);
   if (is_local_ip_selected)
   {

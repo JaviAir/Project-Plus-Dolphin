@@ -106,6 +106,7 @@ public:
   void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override;
 
 signals:
+  void QuickPlayOpponentConnected(quint64 attempt);
   void HostTraversalChanged(quint64 attempt, QString code, bool failed);
   void Stop();
 

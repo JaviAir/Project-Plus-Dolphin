@@ -211,3 +211,23 @@ For failures record the stage, role, revision and topology. NETPLAY Info logs
 include redacted connection stages. Existing normal NetPlay logs may contain
 player names and chat; review before sharing. Do not post tickets, Authorization
 headers, full match IDs, traversal codes, nonces, or coordinator credentials.
+
+### Phase 7 acceptance fixes — lobby handoff and gear
+
+The settings gear is now drawn consistently on Windows and Linux, independent of
+system icon themes. Successful client join and the host lobby receiving its remote
+player automatically close Quick Play and restore settings access without closing
+the normal lobby. Host completion accepts a peer arriving before the publication
+HTTP response; stale attempt notifications are ignored. Errors remain visible.
+
+Recheck both host directions from the new same-SHA builds: the host must keep
+Quick Play open while alone, then both search dialogs close after connection,
+with both players still connected in the normal lobby. Check the gear on both OSes.
+Cross-platform runtime acceptance remains pending.
+
+Local validation: incremental Linux build passed. An offscreen Qt harness linked
+against production controller/dialog objects passed host completion both before
+and after publication response, stale-attempt rejection, automatic client close,
+failed-join error visibility, cancellation, timer shutdown, and zero host teardown
+callbacks on successful handoff. This does not establish real cross-network or
+Windows runtime acceptance.

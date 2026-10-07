@@ -3,12 +3,12 @@
 
 #include "DolphinQt/ToolBar.h"
 
-#include <algorithm>
 #include <vector>
 
 #include <QAction>
 #include <QIcon>
 #include <QPainter>
+#include <QPainterPath>
 #include <QToolButton>
 
 #include "Core/Core.h"
@@ -42,51 +42,34 @@ static QIcon MakeQuickPlaySettingsIcon(const QIcon& quickplay_icon)
     }
   }
 
-  const QIcon gear =
-      QIcon::fromTheme(QStringLiteral("preferences-system"), Resources::GetThemeIcon("config"));
+  // Draw the same gear on every platform, independent of installed icon themes.
+  QPainterPath gear;
+  gear.addEllipse(QRectF(8, 10, 16, 16));
+  for (int tooth = 0; tooth < 8; ++tooth)
+  {
+    QPainterPath rectangle;
+    rectangle.addRoundedRect(QRectF(13, 6, 6, 6), 1, 1);
+    QTransform rotation;
+    rotation.translate(16, 18);
+    rotation.rotate(tooth * 45);
+    rotation.translate(-16, -18);
+    gear = gear.united(rotation.map(rectangle));
+  }
+  QPainterPath hole;
+  hole.addEllipse(QRectF(12, 14, 8, 8));
+  gear = gear.subtracted(hole);
+
   QIcon result;
-  // Keep a 32px canvas, with a 24px gear lowered slightly beside the Quickplay icon.
   for (int scale : {1, 2, 3, 4})
   {
     QPixmap pixmap(ICON_SIZE * scale);
     pixmap.setDevicePixelRatio(scale);
     pixmap.fill(Qt::transparent);
     QPainter painter(&pixmap);
-    gear.paint(&painter, QRect(4, 6, 24, 24));
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillPath(gear, accent);
     painter.end();
-    // Convert shading to coverage, not darker RGB: the visible strokes must use
-    // exactly Quick Play's accent. Opaque dark detail in system icons becomes cutouts.
-    QImage tinted = pixmap.toImage();
-    int darkest = 255;
-    int brightest = 0;
-    for (int y = 0; y < tinted.height(); ++y)
-    {
-      for (int x = 0; x < tinted.width(); ++x)
-      {
-        const QColor color = tinted.pixelColor(x, y);
-        if (color.alpha() < 128)
-          continue;
-        const int shade = qGray(color.rgb());
-        darkest = std::min(darkest, shade);
-        brightest = std::max(brightest, shade);
-      }
-    }
-    for (int y = 0; y < tinted.height(); ++y)
-    {
-      for (int x = 0; x < tinted.width(); ++x)
-      {
-        const QColor color = tinted.pixelColor(x, y);
-        const int coverage = brightest > darkest ?
-                                 std::clamp((qGray(color.rgb()) - darkest) * 510 /
-                                                (brightest - darkest),
-                                            0, 255) :
-                                 255;
-        QColor pixel = accent;
-        pixel.setAlpha(color.alpha() * coverage / 255);
-        tinted.setPixelColor(x, y, pixel);
-      }
-    }
-    result.addPixmap(QPixmap::fromImage(tinted));
+    result.addPixmap(pixmap);
   }
   return result;
 }
