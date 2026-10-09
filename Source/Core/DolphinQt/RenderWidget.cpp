@@ -516,6 +516,22 @@ void RenderWidget::PassEventToPresenter(const QEvent* event)
   if (!Core::IsRunning(Core::System::GetInstance()))
     return;
 
+  // Clear the shared overlay's held input on focus loss. A release after returning
+  // must not complete a stale click (or leave a chat key held).
+  if (event->type() == QEvent::FocusOut || event->type() == QEvent::WindowDeactivate ||
+      event->type() == QEvent::WindowBlocked || event->type() == QEvent::Hide)
+  {
+    g_presenter->SetMousePress(0);
+    g_presenter->SetMousePos(-1.0f, -1.0f);
+    for (u32 key = 0; key < 512; ++key)
+      g_presenter->SetKey(key, false, nullptr);
+    return;
+  }
+  if (!isActiveWindow() &&
+      (event->type() == QEvent::KeyPress || event->type() == QEvent::MouseButtonPress ||
+       event->type() == QEvent::MouseButtonRelease || event->type() == QEvent::MouseMove))
+    return;
+
   switch (event->type())
   {
   case QEvent::KeyPress:

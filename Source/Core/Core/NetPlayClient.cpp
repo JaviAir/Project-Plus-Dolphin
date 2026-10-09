@@ -814,6 +814,7 @@ void NetPlayClient::OnWiimoteData(sf::Packet& packet)
 
 void NetPlayClient::OnPadBufferMinimum(sf::Packet& packet)
 {
+  std::lock_guard lock(m_crit.players);
   u32 size = 0;
   packet >> size;
 
@@ -821,7 +822,7 @@ void NetPlayClient::OnPadBufferMinimum(sf::Packet& packet)
   m_dialog->OnMinimumPadBufferChanged(size);
 
   if (m_local_player->buffer < m_minimum_buffer_size)
-    AdjustPlayerPadBufferSize(m_minimum_buffer_size);
+    AdjustPlayerPadBufferSize(size);
 }
 
 void NetPlayClient::OnPadBufferPlayer(sf::Packet& packet)
@@ -837,7 +838,9 @@ void NetPlayClient::OnPadBufferPlayer(sf::Packet& packet)
 
 void NetPlayClient::OnHostInputAuthority(sf::Packet& packet)
 {
-  packet >> m_host_input_authority;
+  bool enabled = false;
+  packet >> enabled;
+  m_host_input_authority = enabled;
   m_dialog->OnHostInputAuthorityChanged(m_host_input_authority);
 }
 
@@ -1772,7 +1775,10 @@ NetPlayClient::LobbyState NetPlayClient::GetLobbyState()
                    m_selected_game,
                    m_local_player ? m_local_player->pid : PlayerId{},
                    IsConnected(),
-                   m_current_game};
+                   m_current_game,
+                   m_minimum_buffer_size.load(),
+                   m_is_running.IsSet(),
+                   m_host_input_authority.load()};
   for (const auto& [pid, player] : m_players)
     state.players.push_back(player);
   return state;

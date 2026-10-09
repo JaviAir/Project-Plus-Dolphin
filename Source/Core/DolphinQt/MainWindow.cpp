@@ -2750,20 +2750,20 @@ void MainWindow::OnExportRecording()
 
 void MainWindow::OnActivateChat()
 {
-  if (g_netplay_chat_ui)
-    g_netplay_chat_ui->Activate();
+  if (const auto overlay = g_netplay_chat_ui.load())
+    overlay->Activate();
 }
 
 void MainWindow::OnCollapseChat()
 {
-  if (g_netplay_chat_ui)
-    g_netplay_chat_ui->Collapse();
+  if (const auto overlay = g_netplay_chat_ui.load())
+    overlay->Collapse();
 }
 
 void MainWindow::OnExpandChat()
 {
-  if (g_netplay_chat_ui)
-    g_netplay_chat_ui->Expand();
+  if (const auto overlay = g_netplay_chat_ui.load())
+    overlay->Expand();
 }
 
 void MainWindow::OnRequestGolfControl()

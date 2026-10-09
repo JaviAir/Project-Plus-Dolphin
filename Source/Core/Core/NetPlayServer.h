@@ -67,6 +67,8 @@ public:
   void SetWiimoteMapping(const PadMappingArray& mappings);
 
   void AdjustMinimumPadBufferSize(unsigned int size);
+  unsigned int GetMinimumPadBufferSize();
+  bool AdjustMinimumPadBufferSizeIfRunning(unsigned int size, u32 game);
   void SetHostInputAuthority(bool enable);
 
   void KickPlayer(PlayerId player);

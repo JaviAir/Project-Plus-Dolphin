@@ -15,6 +15,7 @@
 #include <QLabel>
 #include <QLineEdit>
 #include <QMenu>
+#include <QPointer>
 #include <QPushButton>
 #include <QSignalBlocker>
 #include <QSpinBox>
@@ -434,7 +435,7 @@ void NetPlayDialog::ConnectWidgets()
     if (state == Core::State::Uninitialized)
     {
       // Rendering has stopped; network callbacks must not destroy these overlays.
-      g_netplay_chat_ui.reset();
+      g_netplay_chat_ui.store(nullptr);
       g_netplay_golf_ui.reset();
     }
     if (isVisible())
@@ -546,7 +547,7 @@ void NetPlayDialog::ReleaseQuickPlayStart()
 
 void NetPlayDialog::ResetSession()
 {
-  g_netplay_chat_ui.reset();
+  g_netplay_chat_ui.store(nullptr);
   g_netplay_golf_ui.reset();
   ++m_session_generation;
   m_got_stop_request = true;
@@ -970,12 +971,13 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
     m_chat_edit->append(QStringLiteral("<font color='%1'>%2</font>")
                             .arg(QString::fromStdString(color), msg.toHtmlEscaped()));
     const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
-    if (g_netplay_chat_ui && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
+    if (const auto overlay = g_netplay_chat_ui.load();
+        overlay && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
         Core::IsRunning(Core::System::GetInstance()))
     {
-      g_netplay_chat_ui->AppendChat(msg.toStdString(),
-                                    {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
-                                     static_cast<float>(c.blueF())});
+      overlay->AppendChat(msg.toStdString(),
+                          {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
+                           static_cast<float>(c.blueF())});
     }
   });
 }
@@ -1065,8 +1067,20 @@ void NetPlayDialog::OnMsgStartGame(u32 game_id)
     m_start_received = true;
     m_started_game = game_id;
     DisplayMessage(tr("Started game"), "green");
-    g_netplay_chat_ui = std::make_unique<NetPlayChatUI>(
-        [this](const std::string& message) { SendMessage(message); });
+    g_netplay_chat_ui.store(std::make_shared<NetPlayChatUI>(
+        [dialog = QPointer<NetPlayDialog>(this), generation, game_id](const std::string& message) {
+          QueueOnObject(QApplication::instance(), [dialog, generation, game_id, message] {
+            if (dialog && dialog->m_session_generation == generation &&
+                dialog->m_started_game == game_id)
+            {
+              const auto active = Settings::Instance().GetNetPlayClient();
+              if (active && active->IsConnected() && active->GetLobbyState().running &&
+                  active->GetLobbyState().current_game == game_id)
+                dialog->SendMessage(message);
+            }
+          });
+        },
+        client, Settings::Instance().GetNetPlayServer(), game_id));
     if (m_host_input_authority && client->GetNetSettings().golf_mode)
       g_netplay_golf_ui = std::make_unique<NetPlayGolfUI>(client);
     if (const auto game = FindGameFile(m_current_game_identifier))

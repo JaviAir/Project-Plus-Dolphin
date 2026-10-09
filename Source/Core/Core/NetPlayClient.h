@@ -136,6 +136,9 @@ public:
     PlayerId local_player;
     bool connected;
     u32 current_game;
+    u32 minimum_buffer;
+    bool running;
+    bool host_input_authority;
   };
   // Values, never pointers into the player map which a disconnect can invalidate.
   LobbyState GetLobbyState();
@@ -193,12 +196,13 @@ public:
   // the number of ticks in-between frames
   constexpr static int buffer_accuracy = 4;
 
-  inline u32 BufferSizeForPort(int pad) const
+  inline u32 BufferSizeForPort(int pad)
   {
+    std::lock_guard lock(m_crit.players);
     if (m_pad_map[pad] <= 0)
       return 0;
 
-    return std::max(m_minimum_buffer_size, m_players.at(m_pad_map.at(pad)).buffer);
+    return std::max(m_minimum_buffer_size.load(), m_players.at(m_pad_map.at(pad)).buffer);
   }
 
   // used for chat, not the best place for it
@@ -269,8 +273,8 @@ protected:
   // try to keep in-flight to the other clients. In host input authority mode, this is how
   // many incoming input packets need to be queued up before the client starts
   // speeding up the game to drain the buffer.
-  unsigned int m_minimum_buffer_size = 2;
-  bool m_host_input_authority = false;
+  std::atomic<unsigned int> m_minimum_buffer_size{2};
+  std::atomic<bool> m_host_input_authority{false};
   PlayerId m_current_golfer = 1;
 
   // This bool will stall the client at the start of GetNetPads, used for switching input control

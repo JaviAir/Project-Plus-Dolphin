@@ -511,9 +511,9 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
     SendResponseToPlayer(new_player, MessageID::GameStatus, existing_player.pid,
                          static_cast<u8>(existing_player.game_status));
-						 
-	SendResponseToPlayer(new_player, MessageID::PadBufferPlayer, existing_player.pid,
-                         static_cast<u8>(existing_player.buffer));
+
+    SendResponseToPlayer(new_player, MessageID::PadBufferPlayer, existing_player.pid,
+                         static_cast<u32>(existing_player.buffer));
   }
 
   if (Config::Get(Config::NETPLAY_ENABLE_QOS))
@@ -702,6 +702,23 @@ void NetPlayServer::UpdateWiimoteMapping()
   SendToClients(spac);
 }
 
+unsigned int NetPlayServer::GetMinimumPadBufferSize()
+{
+  std::lock_guard lock(m_crit.game);
+  return m_minimum_buffer_size;
+}
+
+bool NetPlayServer::AdjustMinimumPadBufferSizeIfRunning(unsigned int size, u32 game)
+{
+  std::lock_guard lock(m_crit.game);
+  // The peer can disconnect between a GUI snapshot and this request. Serialize
+  // the final check with game teardown, then use the lobby's canonical setter.
+  if (!m_is_running || m_current_game != game || m_host_input_authority || size > 99)
+    return false;
+  AdjustMinimumPadBufferSize(size);
+  return true;
+}
+
 // called from ---GUI--- thread and ---NETPLAY--- thread
 void NetPlayServer::AdjustMinimumPadBufferSize(unsigned int size)
 {
@@ -808,21 +825,21 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     SendToClients(spac, player.pid);
   }
   break;
-  
+
   case MessageID::PadBufferPlayer:
   {
-	u32 buffer;
-	packet >> buffer;
+    u32 buffer;
+    packet >> buffer;
 
-	player.buffer = buffer;
+    player.buffer = buffer;
 
-	sf::Packet spac;
-	spac << MessageID::PadBufferPlayer;
-	spac << player.pid;
-	spac << buffer;
+    sf::Packet spac;
+    spac << MessageID::PadBufferPlayer;
+    spac << player.pid;
+    spac << buffer;
 
-	SendToClients(spac, player.pid);
-	}
+    SendToClients(spac, player.pid);
+  }
   break;
 
   case MessageID::ChunkedDataProgress:
@@ -855,7 +872,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     packet >> spectator;
 
     auto padmap = GetPadMapping();
-  
+
     int player_port = -1;
     for (int i = 0; i < (int)padmap.size(); i++)
     {
@@ -886,7 +903,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     this->SetPadMapping(padmap);
   }
   break;
-
 
   case MessageID::PadData:
   {
@@ -1096,6 +1112,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
   case MessageID::StopGame:
   {
+    std::lock_guard game_lock(m_crit.game);
     if (!m_is_running)
       break;
 
