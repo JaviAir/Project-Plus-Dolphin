@@ -15,6 +15,7 @@
 #include "Core/HW/EXI/EXI_DeviceIPL.h"
 #include "Core/HW/EXI/EXI_DeviceMemoryCard.h"
 #include "Core/HW/EXI/EXI_DeviceModem.h"
+#include "Core/HW/EXI/EXI_DeviceProjectPlusOnline.h"
 #include "Core/HW/Memmap.h"
 #include "Core/System.h"
 
@@ -117,6 +118,10 @@ std::unique_ptr<IEXIDevice> EXIDevice_Create(Core::System& system, const EXIDevi
 
   switch (device_type)
   {
+  case EXIDeviceType::ProjectPlusOnline:
+    result = std::make_unique<CEXIProjectPlusOnline>(system);
+    break;
+
   case EXIDeviceType::Dummy:
     result = std::make_unique<CEXIDummy>(system, "Dummy");
     break;

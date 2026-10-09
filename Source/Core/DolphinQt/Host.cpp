@@ -208,6 +208,16 @@ void Host_Message(HostMessageID id)
   {
     emit Host::GetInstance()->RequestStop();
   }
+  else if (id == HostMessageID::WMUserStartQuickPlay)
+  {
+    Q_ASSERT(QThread::currentThread() == Host::GetInstance()->thread());
+    emit Host::GetInstance()->RequestQuickPlay();
+  }
+  else if (id == HostMessageID::WMUserCancelQuickPlay)
+  {
+    Q_ASSERT(QThread::currentThread() == Host::GetInstance()->thread());
+    emit Host::GetInstance()->RequestQuickPlayCancel();
+  }
   else if (id == HostMessageID::WMUserJobDispatch)
   {
     // Just poke the main thread to get it to wake up, job dispatch

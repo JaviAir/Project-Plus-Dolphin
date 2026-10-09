@@ -55,7 +55,10 @@ void QuickPlayDialog::done(int result)
 {
   // Covers Cancel, Escape, window close, and programmatic dialog completion.
   m_animation_timer.stop();
-  m_controller.Cancel();
+  // Successful acceptance transfers presentation to the ordinary lobby. Rejection
+  // remains an explicit user cancellation, including during the Core stop.
+  if (result != QDialog::Accepted)
+    m_controller.Cancel();
   QDialog::done(result);
 }
 
@@ -83,6 +86,13 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
   case QuickPlayController::State::MatchedClient:
     m_status->setText(tr("Opponent found...\nMatched as client"));
     break;
+  case QuickPlayController::State::PreparingHandoff:
+  case QuickPlayController::State::WaitingForCoreStop:
+    m_status->setText(tr("Opponent found. Stopping the local game..."));
+    break;
+  case QuickPlayController::State::ValidatingMatch:
+    m_status->setText(tr("Checking match..."));
+    break;
   case QuickPlayController::State::CreatingHost:
     m_status->setText(tr("Creating room..."));
     break;
@@ -100,6 +110,7 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
     m_status->setText(tr("Connecting..."));
     break;
   case QuickPlayController::State::NetPlayConnected:
+  case QuickPlayController::State::NetPlayOwned:
     accept();
     return;
   case QuickPlayController::State::Error:

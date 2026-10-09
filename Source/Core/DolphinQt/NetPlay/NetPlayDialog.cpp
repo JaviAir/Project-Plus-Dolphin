@@ -55,6 +55,7 @@
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
+#include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
 #include "DolphinQt/Resources.h"
 #include "DolphinQt/Settings.h"
 #include "DolphinQt/Settings/GameCubePane.h"
@@ -98,6 +99,15 @@ NetPlayDialog::NetPlayDialog(const GameListModel& game_list_model,
     : QDialog(parent), m_game_list_model(game_list_model),
       m_start_game_callback(std::move(start_game_callback))
 {
+  RefreshGameListSnapshot();
+  connect(&m_game_list_model, &QAbstractItemModel::modelReset, this,
+          &NetPlayDialog::RefreshGameListSnapshot);
+  connect(&m_game_list_model, &QAbstractItemModel::rowsInserted, this,
+          &NetPlayDialog::RefreshGameListSnapshot);
+  connect(&m_game_list_model, &QAbstractItemModel::rowsRemoved, this,
+          &NetPlayDialog::RefreshGameListSnapshot);
+  connect(&m_game_list_model, &QAbstractItemModel::dataChanged, this,
+          &NetPlayDialog::RefreshGameListSnapshot);
   setWindowTitle(tr("NetPlay"));
   setWindowIcon(Resources::GetAppIcon());
 
@@ -233,7 +243,7 @@ void NetPlayDialog::CreateMainLayout()
     Settings::Instance().GetNetPlayServer()->ComputeGameDigest(
         NetPlay::NetPlayClient::GetBrawlFileIdentifier());
   });
-  
+
   m_other_menu = m_menu_bar->addMenu(tr("Other"));
   m_record_input_action = m_other_menu->addAction(tr("Record Inputs"));
   m_record_input_action->setCheckable(true);
@@ -306,7 +316,7 @@ void NetPlayDialog::CreatePlayersLayout()
   m_players_list = new QTableWidget;
   m_kick_button = new QPushButton(tr("Kick Player"));
   m_assign_ports_button = new QPushButton(tr("Assign Controller Ports"));
-  
+
   copyCode = false;
 
   m_players_list->setTabKeyNavigation(false);
@@ -381,7 +391,7 @@ void NetPlayDialog::ConnectWidgets()
     if (value == m_player_buffer_size)
       return;
     auto client = Settings::Instance().GetNetPlayClient();
-      client->AdjustPlayerPadBufferSize(value);
+    client->AdjustPlayerPadBufferSize(value);
   });
   const auto hia_function = [this](bool enable) {
     if (m_host_input_authority != enable)
@@ -397,10 +407,13 @@ void NetPlayDialog::ConnectWidgets()
   connect(m_golf_mode_action, &QAction::toggled, this, [hia_function] { hia_function(true); });
   connect(m_fixed_delay_action, &QAction::toggled, this, [hia_function] { hia_function(false); });
 
-  connect(m_start_button, &QPushButton::clicked, this, &NetPlayDialog::OnStart);
+  connect(m_start_button, &QPushButton::clicked, this, [this] {
+    if (!m_quickplay_attempt)
+      OnStart();
+  });
   connect(m_quit_button, &QPushButton::clicked, this, &NetPlayDialog::reject);
 
-  connect(m_spectator_mode, &QCheckBox::toggled, this, &NetPlayDialog::IsSpectatorEnabled); 
+  connect(m_spectator_mode, &QCheckBox::toggled, this, &NetPlayDialog::IsSpectatorEnabled);
 
   connect(m_game_button, &QPushButton::clicked, [this] {
     GameListDialog gld(m_game_list_model, this);
@@ -418,6 +431,12 @@ void NetPlayDialog::ConnectWidgets()
   });
 
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
+    if (state == Core::State::Uninitialized)
+    {
+      // Rendering has stopped; network callbacks must not destroy these overlays.
+      g_netplay_chat_ui.reset();
+      g_netplay_golf_ui.reset();
+    }
     if (isVisible())
     {
       GameStatusChanged(state != Core::State::Uninitialized);
@@ -426,6 +445,8 @@ void NetPlayDialog::ConnectWidgets()
       {
         Settings::Instance().GetNetPlayClient()->RequestStopGame();
       }
+      if (state == Core::State::Uninitialized)
+        m_start_received = false;
       if (state == Core::State::Uninitialized)
         DisplayMessage(tr("Stopped game"), "red");
     }
@@ -506,14 +527,92 @@ void NetPlayDialog::OnIndexRefreshFailed(const std::string error)
   DisplayMessage(QString::fromStdString(error), "red");
 }
 
-void NetPlayDialog::OnStart()
+void NetPlayDialog::ArmQuickPlayStart(u64 attempt, std::function<bool()> ready)
 {
+  m_quickplay_setup_active = true;
+  m_quickplay_attempt = attempt;
+  m_quickplay_ready = std::move(ready);
+  m_quickplay_start_requested = false;
+  m_start_received = false;
+  m_quickplay_start_aborted = false;
+}
+
+void NetPlayDialog::ReleaseQuickPlayStart()
+{
+  m_quickplay_setup_active = false;
+  m_quickplay_attempt = 0;
+  m_quickplay_ready = {};
+}
+
+void NetPlayDialog::ResetSession()
+{
+  g_netplay_chat_ui.reset();
+  g_netplay_golf_ui.reset();
+  ++m_session_generation;
+  m_got_stop_request = true;
+  m_started_game.reset();
+  m_quickplay_setup_active = false;
+  m_quickplay_attempt = 0;
+  m_quickplay_ready = {};
+  m_quickplay_start_requested = false;
+  m_start_received = false;
+  m_quickplay_start_aborted = false;
+}
+
+bool NetPlayDialog::IsQuickPlayReady()
+{
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (!client || !client->IsConnected() || m_quickplay_start_aborted)
+    return false;
+  const auto lobby = client->GetLobbyState();
+  const auto& pads = lobby.pads;
+  if (!lobby.connected || lobby.players.size() != 2 || pads[0] != 1 || pads[1] == 0 ||
+      pads[1] == 1 || pads[2] != 0 || pads[3] != 0)
+    return false;
+  for (const auto& player : lobby.players)
+  {
+    if ((player.pid != pads[0] && player.pid != pads[1]) ||
+        player.game_status != NetPlay::SyncIdentifierComparison::SameGame)
+      return false;
+  }
+  for (size_t i = 0; i < 4; ++i)
+  {
+    if (lobby.gba[i].enabled || lobby.wiimotes[i] != 0)
+      return false;
+  }
+  const auto launcher = FindPPlusNetplayLauncher(m_game_list_model);
+  const auto selected = FindGameFile(lobby.game);
+  return launcher.game && selected && launcher.game->GetFilePath() == selected->GetFilePath() &&
+         launcher.game->CompareSyncIdentifier(m_current_game_identifier) ==
+             NetPlay::SyncIdentifierComparison::SameGame &&
+         (IsHosting() ? lobby.local_player == 1 : lobby.local_player == pads[1]);
+}
+
+bool NetPlayDialog::StartQuickPlayGame(u64 attempt)
+{
+  return attempt && attempt == m_quickplay_attempt && OnStart();
+}
+
+bool NetPlayDialog::OnStart()
+{
+  const auto generation = m_session_generation.load();
+  const auto server = Settings::Instance().GetNetPlayServer();
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (!IsHosting() || !Settings::Instance().GetNetPlayClient() || m_start_received)
+    return false;
+  if (m_quickplay_attempt)
+  {
+    if (m_quickplay_start_aborted || m_quickplay_start_requested || !m_quickplay_ready ||
+        !m_quickplay_ready())
+      return false;
+    m_quickplay_start_requested = true;
+  }
   if (!Settings::Instance().GetNetPlayClient()->DoAllPlayersHaveGame())
   {
     if (ModalMessageBox::question(
             this, tr("Warning"),
             tr("Not all players have the game. Do you really want to start?")) == QMessageBox::No)
-      return;
+      return false;
   }
 
   if (m_strict_settings_sync_action->isChecked() && Config::Get(Config::GFX_EFB_SCALE) == 0)
@@ -522,18 +621,26 @@ void NetPlayDialog::OnStart()
         this, tr("Error"),
         tr("Auto internal resolution is not allowed in strict sync mode, as it depends on window "
            "size.\n\nPlease select a specific internal resolution."));
-    return;
+    return false;
   }
 
   const auto game = FindGameFile(m_current_game_identifier);
   if (!game)
   {
     PanicAlertFmtT("Selected game doesn't exist in game list!");
-    return;
+    return false;
   }
 
-  if (Settings::Instance().GetNetPlayServer()->RequestStartGame())
+  if (generation != m_session_generation || server != Settings::Instance().GetNetPlayServer() ||
+      client != Settings::Instance().GetNetPlayClient() ||
+      (m_quickplay_attempt && (!m_quickplay_ready || !m_quickplay_ready())))
+    return false;
+  if (server->RequestStartGame())
+  {
     SetOptionsEnabled(false);
+    return true;
+  }
+  return false;
 }
 
 void NetPlayDialog::reject()
@@ -663,7 +770,7 @@ void NetPlayDialog::UpdateGUI()
     return;
 
   // Update Player List
-  const auto players = client->GetPlayers();
+  const auto players = client->GetLobbyState().players;
 
   if (static_cast<int>(players.size()) != m_player_count && m_player_count != 0)
     QApplication::alert(this);
@@ -698,7 +805,7 @@ void NetPlayDialog::UpdateGUI()
 
   for (int i = 0; i < m_player_count; i++)
   {
-    const auto* p = players[i];
+    const auto* p = &players[i];
 
     auto* name_item = new QTableWidgetItem(QString::fromStdString(p->name));
     name_item->setToolTip(name_item->text());
@@ -779,12 +886,12 @@ void NetPlayDialog::UpdateGUI()
         m_hostcode_label->setText(
             InetAddressToString(Common::g_TraversalClient->GetExternalAddress()));
       }
-	  
-	  if (copyCode == false)
-	  {
-		QApplication::clipboard()->setText(m_hostcode_label->text());
-		copyCode = true;
-	  }
+
+      if (copyCode == false)
+      {
+        QApplication::clipboard()->setText(m_hostcode_label->text());
+        copyCode = true;
+      }
       m_hostcode_action_button->setEnabled(true);
       m_hostcode_action_button->setText(tr("Copy"));
       m_is_copy_button_retry = false;
@@ -830,11 +937,16 @@ void NetPlayDialog::BootGame(const std::string& filename,
 
 void NetPlayDialog::StopGame()
 {
-  if (m_got_stop_request)
-    return;
-
-  m_got_stop_request = true;
-  emit Stop();
+  // Match the existing Stop signal's direct/queued behavior, with session identity.
+  QMetaObject::invokeMethod(
+      this,
+      [this, generation = m_session_generation.load()] {
+        if (generation != m_session_generation || m_got_stop_request)
+          return;
+        m_got_stop_request = true;
+        emit Stop();
+      },
+      Qt::AutoConnection);
 }
 
 bool NetPlayDialog::IsHosting() const
@@ -844,25 +956,28 @@ bool NetPlayDialog::IsHosting() const
 
 void NetPlayDialog::Update()
 {
-  QueueOnObject(this, &NetPlayDialog::UpdateGUI);
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation == m_session_generation)
+      UpdateGUI();
+  });
 }
 
 void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color, int duration)
 {
-  QueueOnObject(m_chat_edit, [this, color, msg] {
+  QueueOnObject(m_chat_edit, [this, color, msg, generation = m_session_generation.load()] {
+    if (generation != m_session_generation)
+      return;
     m_chat_edit->append(QStringLiteral("<font color='%1'>%2</font>")
                             .arg(QString::fromStdString(color), msg.toHtmlEscaped()));
+    const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
+    if (g_netplay_chat_ui && Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
+        Core::IsRunning(Core::System::GetInstance()))
+    {
+      g_netplay_chat_ui->AppendChat(msg.toStdString(),
+                                    {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
+                                     static_cast<float>(c.blueF())});
+    }
   });
-
-  const QColor c(color.empty() ? QStringLiteral("white") : QString::fromStdString(color));
-
-  if (Config::Get(Config::GFX_SHOW_NETPLAY_MESSAGES) &&
-      Core::IsRunning(Core::System::GetInstance()))
-  {
-    g_netplay_chat_ui->AppendChat(msg.toStdString(),
-                                  {static_cast<float>(c.redF()), static_cast<float>(c.greenF()),
-                                   static_cast<float>(c.blueF())});
-  }
 }
 
 void NetPlayDialog::AppendChat(const std::string& msg)
@@ -875,12 +990,15 @@ void NetPlayDialog::OnMsgChangeGame(const NetPlay::SyncIdentifier& sync_identifi
                                     const std::string& netplay_name)
 {
   QString qname = QString::fromStdString(netplay_name);
-  QueueOnObject(this, [this, qname, netplay_name, &sync_identifier] {
-    m_game_button->setText(qname);
-    m_current_game_identifier = sync_identifier;
-    m_current_game_name = netplay_name;
-    UpdateDiscordPresence();
-  });
+  QueueOnObject(
+      this, [this, qname, netplay_name, sync_identifier, generation = m_session_generation.load()] {
+        if (generation != m_session_generation)
+          return;
+        m_game_button->setText(qname);
+        m_current_game_identifier = sync_identifier;
+        m_current_game_name = netplay_name;
+        UpdateDiscordPresence();
+      });
   DisplayMessage(tr("Game changed to \"%1\"").arg(qname), "magenta");
 }
 
@@ -900,7 +1018,10 @@ void NetPlayDialog::OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config)
 
 void NetPlayDialog::GameStatusChanged(bool running)
 {
-  QueueOnObject(this, [this, running] { SetOptionsEnabled(!running); });
+  QueueOnObject(this, [this, running, generation = m_session_generation.load()] {
+    if (generation == m_session_generation)
+      SetOptionsEnabled(!running);
+  });
 }
 
 void NetPlayDialog::SetOptionsEnabled(bool enabled)
@@ -926,44 +1047,52 @@ void NetPlayDialog::SetOptionsEnabled(bool enabled)
   m_record_input_action->setEnabled(enabled);
 }
 
-void NetPlayDialog::OnMsgStartGame()
+void NetPlayDialog::OnMsgStartGame(u32 game_id)
 {
-  DisplayMessage(tr("Started game"), "green");
-
-  g_netplay_chat_ui =
-      std::make_unique<NetPlayChatUI>([this](const std::string& message) { SendMessage(message); });
-
-  if (m_host_input_authority && Settings::Instance().GetNetPlayClient()->GetNetSettings().golf_mode)
-  {
-    g_netplay_golf_ui = std::make_unique<NetPlayGolfUI>(Settings::Instance().GetNetPlayClient());
-  }
-
-  QueueOnObject(this, [this] {
+  // Tag the notification when it arrives, not when the GUI eventually executes it.
+  QueueOnObject(this, [this, game_id, generation = m_session_generation.load()] {
     const auto client = Settings::Instance().GetNetPlayClient();
-
-    if (client)
+    if (generation != m_session_generation || !client || !client->IsConnected() ||
+        m_started_game == game_id || client->GetLobbyState().current_game != game_id ||
+        m_start_received || NetPlay::IsNetPlayRunning())
+      return;
+    if (m_quickplay_attempt &&
+        (m_quickplay_start_aborted || !m_quickplay_ready || !m_quickplay_ready()))
     {
-      if (const auto game = FindGameFile(m_current_game_identifier))
-        client->StartGame(game->GetFilePath());
-      else
-        PanicAlertFmtT("Selected game doesn't exist in game list!");
+      emit QuickPlayStartAborted(m_quickplay_attempt);
+      return;
     }
+    m_start_received = true;
+    m_started_game = game_id;
+    DisplayMessage(tr("Started game"), "green");
+    g_netplay_chat_ui = std::make_unique<NetPlayChatUI>(
+        [this](const std::string& message) { SendMessage(message); });
+    if (m_host_input_authority && client->GetNetSettings().golf_mode)
+      g_netplay_golf_ui = std::make_unique<NetPlayGolfUI>(client);
+    if (const auto game = FindGameFile(m_current_game_identifier))
+      client->StartGame(game->GetFilePath());
+    else
+      PanicAlertFmtT("Selected game doesn't exist in game list!");
     UpdateDiscordPresence();
   });
 }
 
 void NetPlayDialog::OnMsgStopGame()
 {
-  g_netplay_chat_ui.reset();
-  g_netplay_golf_ui.reset();
-  QueueOnObject(this, [this] { UpdateDiscordPresence(); });
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation == m_session_generation)
+      UpdateDiscordPresence();
+  });
 }
 
 void NetPlayDialog::OnMsgPowerButton()
 {
   if (!Core::IsRunning(Core::System::GetInstance()))
     return;
-  QueueOnObject(this, [] { UICommon::TriggerSTMPowerEvent(); });
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation == m_session_generation && NetPlay::IsNetPlayRunning())
+      UICommon::TriggerSTMPowerEvent();
+  });
 }
 
 void NetPlayDialog::OnPlayerConnect(const std::string& player)
@@ -973,6 +1102,13 @@ void NetPlayDialog::OnPlayerConnect(const std::string& player)
 
 void NetPlayDialog::OnPlayerDisconnect(const std::string& player)
 {
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation == m_session_generation && m_quickplay_attempt)
+    {
+      m_quickplay_start_aborted = true;
+      emit QuickPlayStartAborted(m_quickplay_attempt);
+    }
+  });
   DisplayMessage(tr("%1 has left").arg(QString::fromStdString(player)), "darkcyan");
 }
 
@@ -1045,12 +1181,21 @@ void NetPlayDialog::OnDesync(u32 frame, const std::string& player)
 
 void NetPlayDialog::OnConnectionLost()
 {
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation == m_session_generation && m_quickplay_attempt)
+    {
+      m_quickplay_start_aborted = true;
+      emit QuickPlayStartAborted(m_quickplay_attempt);
+    }
+  });
   DisplayMessage(tr("Lost connection to NetPlay server..."), "red");
 }
 
 void NetPlayDialog::OnConnectionError(const std::string& message)
 {
-  QueueOnObject(this, [this, message] {
+  QueueOnObject(this, [this, message, generation = m_session_generation.load()] {
+    if (generation != m_session_generation)
+      return;
     ModalMessageBox::critical(this, tr("Error"),
                               tr("Failed to connect to server: %1").arg(tr(message.c_str())));
   });
@@ -1058,7 +1203,9 @@ void NetPlayDialog::OnConnectionError(const std::string& message)
 
 void NetPlayDialog::OnTraversalError(Common::TraversalClient::FailureReason error)
 {
-  QueueOnObject(this, [this, error] {
+  QueueOnObject(this, [this, error, generation = m_session_generation.load()] {
+    if (generation != m_session_generation)
+      return;
     switch (error)
     {
     case Common::TraversalClient::FailureReason::BadHost:
@@ -1105,7 +1252,16 @@ void NetPlayDialog::OnTraversalStateChanged(Common::TraversalClient::State state
 
 void NetPlayDialog::OnGameStartAborted()
 {
-  QueueOnObject(this, [this] { SetOptionsEnabled(true); });
+  QueueOnObject(this, [this, generation = m_session_generation.load()] {
+    if (generation != m_session_generation)
+      return;
+    SetOptionsEnabled(true);
+    if (m_quickplay_attempt)
+    {
+      m_quickplay_start_aborted = true;
+      emit QuickPlayStartAborted(m_quickplay_attempt);
+    }
+  });
 }
 
 void NetPlayDialog::OnGolferChanged(const bool is_golfer, const std::string& golfer_name)
@@ -1135,35 +1291,39 @@ bool NetPlayDialog::IsRecording()
   return false;
 }
 
+void NetPlayDialog::RefreshGameListSnapshot()
+{
+  auto games = std::make_shared<GameListSnapshot>();
+  for (int i = 0; i < m_game_list_model.rowCount(QModelIndex()); ++i)
+    games->push_back(m_game_list_model.GetGameFile(i));
+  m_game_list_snapshot = std::move(games);
+}
+
 std::shared_ptr<const UICommon::GameFile>
 NetPlayDialog::FindGameFile(const NetPlay::SyncIdentifier& sync_identifier,
                             NetPlay::SyncIdentifierComparison* found)
 {
+  // A network-thread lookup must not wait for the GUI: teardown joins that thread.
   NetPlay::SyncIdentifierComparison temp;
   if (!found)
     found = &temp;
-
   *found = NetPlay::SyncIdentifierComparison::DifferentGame;
-
-  const std::optional<std::shared_ptr<const UICommon::GameFile>> game_file =
-      RunOnObject(this, [this, &sync_identifier, found] {
-        for (int i = 0; i < m_game_list_model.rowCount(QModelIndex()); i++)
-        {
-          auto file = m_game_list_model.GetGameFile(i);
-          *found = std::min(*found, file->CompareSyncIdentifier(sync_identifier));
-          if (*found == NetPlay::SyncIdentifierComparison::SameGame)
-            return file;
-        }
-        return static_cast<std::shared_ptr<const UICommon::GameFile>>(nullptr);
-      });
-  if (game_file)
-    return *game_file;
+  const auto games = m_game_list_snapshot.load();
+  for (const auto& file : *games)
+  {
+    *found = std::min(*found, file->CompareSyncIdentifier(sync_identifier));
+    if (*found == NetPlay::SyncIdentifierComparison::SameGame)
+      return file;
+  }
   return nullptr;
 }
 
 std::string NetPlayDialog::FindGBARomPath(const std::array<u8, 20>& hash, std::string_view title,
                                           int device_number)
 {
+  // Quick Play admits GC controllers only; never open a modal GBA picker during setup.
+  if (m_quickplay_setup_active)
+    return {};
 #ifdef HAS_LIBMGBA
   const auto result = RunOnObject(this, [&, this] {
     std::string rom_path;
@@ -1342,12 +1502,16 @@ void NetPlayDialog::AbortGameDigest()
 void NetPlayDialog::ShowChunkedProgressDialog(const std::string& title, const u64 data_size,
                                               std::span<const int> players)
 {
-  QueueOnObject(this, [this, title, data_size, players] {
-    if (m_chunked_progress_dialog->isVisible())
-      m_chunked_progress_dialog->done(QDialog::Accepted);
+  const std::vector<int> player_ids(players.begin(), players.end());
+  QueueOnObject(
+      this, [this, title, data_size, player_ids, generation = m_session_generation.load()] {
+        if (generation != m_session_generation)
+          return;
+        if (m_chunked_progress_dialog->isVisible())
+          m_chunked_progress_dialog->done(QDialog::Accepted);
 
-    m_chunked_progress_dialog->show(QString::fromStdString(title), data_size, players);
-  });
+        m_chunked_progress_dialog->show(QString::fromStdString(title), data_size, player_ids);
+      });
 }
 
 void NetPlayDialog::HideChunkedProgressDialog()

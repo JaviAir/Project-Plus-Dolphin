@@ -217,7 +217,8 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
         switch (netEvent.type)
         {
         case ENET_EVENT_TYPE_CONNECT:
-          INFO_LOG_FMT(NETPLAY, "Traversal join: peer transport connected; starting NetPlay handshake");
+          INFO_LOG_FMT(NETPLAY,
+                       "Traversal join: peer transport connected; starting NetPlay handshake");
           m_server = netEvent.peer;
 
           // Update time in milliseconds of no acknowledgment of
@@ -344,8 +345,7 @@ void NetPlayClient::AdjustPlayerPadBufferSize(u32 buffer)
   if (m_local_player->buffer < m_minimum_buffer_size)
     m_local_player->buffer = m_minimum_buffer_size;
 
-
-	 // not needed on clients with host input authority
+  // not needed on clients with host input authority
   if (!m_host_input_authority)
   {
     // tell clients to change buffer size
@@ -355,7 +355,7 @@ void NetPlayClient::AdjustPlayerPadBufferSize(u32 buffer)
 
     SendAsync(std::move(spac));
   }
-  
+
   m_dialog->OnPlayerPadBufferChanged(m_local_player->buffer);
 }
 
@@ -446,7 +446,7 @@ void NetPlayClient::OnData(sf::Packet& packet)
   case MessageID::PadBufferMinimum:
     OnPadBufferMinimum(packet);
     break;
-    
+
   case MessageID::PadBufferPlayer:
     OnPadBufferPlayer(packet);
     break;
@@ -678,8 +678,11 @@ void NetPlayClient::OnChunkedDataAbort(sf::Packet& packet)
 
 void NetPlayClient::OnPadMapping(sf::Packet& packet)
 {
-  for (PlayerId& mapping : m_pad_map)
-    packet >> mapping;
+  {
+    std::lock_guard lock(m_crit.game);
+    for (PlayerId& mapping : m_pad_map)
+      packet >> mapping;
+  }
 
   UpdateDevices();
 
@@ -688,8 +691,11 @@ void NetPlayClient::OnPadMapping(sf::Packet& packet)
 
 void NetPlayClient::OnWiimoteMapping(sf::Packet& packet)
 {
-  for (PlayerId& mapping : m_wiimote_map)
-    packet >> mapping;
+  {
+    std::lock_guard lock(m_crit.game);
+    for (PlayerId& mapping : m_wiimote_map)
+      packet >> mapping;
+  }
 
   m_dialog->Update();
 }
@@ -698,12 +704,16 @@ void NetPlayClient::OnGBAConfig(sf::Packet& packet)
 {
   for (size_t i = 0; i < m_gba_config.size(); ++i)
   {
-    auto& config = m_gba_config[i];
-    const auto old_config = config;
-
-    packet >> config.enabled >> config.has_rom >> config.title;
-    for (auto& data : config.hash)
-      packet >> data;
+    GBAConfig config;
+    GBAConfig old_config;
+    {
+      std::lock_guard lock(m_crit.game);
+      old_config = m_gba_config[i];
+      packet >> config.enabled >> config.has_rom >> config.title;
+      for (auto& data : config.hash)
+        packet >> data;
+      m_gba_config[i] = config;
+    }
 
     if (std::tie(config.has_rom, config.title, config.hash) !=
         std::tie(old_config.has_rom, old_config.title, old_config.hash))
@@ -806,24 +816,23 @@ void NetPlayClient::OnPadBufferMinimum(sf::Packet& packet)
 {
   u32 size = 0;
   packet >> size;
-  
+
   m_minimum_buffer_size = size;
-    m_dialog->OnMinimumPadBufferChanged(size);
+  m_dialog->OnMinimumPadBufferChanged(size);
 
-    if (m_local_player->buffer < m_minimum_buffer_size)
-      AdjustPlayerPadBufferSize(m_minimum_buffer_size);
+  if (m_local_player->buffer < m_minimum_buffer_size)
+    AdjustPlayerPadBufferSize(m_minimum_buffer_size);
 }
-
 
 void NetPlayClient::OnPadBufferPlayer(sf::Packet& packet)
 {
-    PlayerId pid;
-    packet >> pid;
+  PlayerId pid;
+  packet >> pid;
 
-    {
-      std::lock_guard<std::recursive_mutex> lkp(m_crit.players);
-      packet >> m_players[pid].buffer;
-    }
+  {
+    std::lock_guard<std::recursive_mutex> lkp(m_crit.players);
+    packet >> m_players[pid].buffer;
+  }
 }
 
 void NetPlayClient::OnHostInputAuthority(sf::Packet& packet)
@@ -1006,7 +1015,7 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     m_net_settings.is_hosting = m_local_player->IsHost();
   }
 
-  m_dialog->OnMsgStartGame();
+  m_dialog->OnMsgStartGame(m_current_game);
 }
 
 void NetPlayClient::OnStopGame(sf::Packet& packet)
@@ -1613,6 +1622,7 @@ u32 NetPlayClient::GetPlayersMaxPing() const
 
 void NetPlayClient::Disconnect()
 {
+  m_connection_lost = true;
   ENetEvent netEvent;
   m_connecting = false;
   m_connection_state = ConnectionState::Failure;
@@ -1662,7 +1672,8 @@ void NetPlayClient::ThreadFunc()
     if (qos_session.Successful())
     {
       m_dialog->AppendChat(
-          Common::GetStringT("Quality of Service (QoS) was successfully enabled.\nBuffer should be set to your ping divided by 16, at a minimum of 3."));
+          Common::GetStringT("Quality of Service (QoS) was successfully enabled.\nBuffer should be "
+                             "set to your ping divided by 16, at a minimum of 3."));
     }
     else
     {
@@ -1704,6 +1715,7 @@ void NetPlayClient::ThreadFunc()
         enet_packet_destroy(netEvent.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
+        m_connection_lost = true;
         INFO_LOG_FMT(NETPLAY, "enet_host_service: disconnect event");
 
         m_dialog->OnConnectionLost();
@@ -1747,6 +1759,23 @@ std::vector<const Player*> NetPlayClient::GetPlayers()
     players.push_back(&pair.second);
 
   return players;
+}
+
+NetPlayClient::LobbyState NetPlayClient::GetLobbyState()
+{
+  std::lock_guard game_lock(m_crit.game);
+  std::lock_guard players_lock(m_crit.players);
+  LobbyState state{{},
+                   m_pad_map,
+                   m_wiimote_map,
+                   m_gba_config,
+                   m_selected_game,
+                   m_local_player ? m_local_player->pid : PlayerId{},
+                   IsConnected(),
+                   m_current_game};
+  for (const auto& [pid, player] : m_players)
+    state.players.push_back(player);
+  return state;
 }
 
 const NetSettings& NetPlayClient::GetNetSettings() const
@@ -2655,7 +2684,8 @@ void NetPlayClient::ComputeGameDigest(const SyncIdentifier& sync_identifier)
   else if (auto game = m_dialog->FindGameFile(sync_identifier))
     file = game->GetFilePath();
   else if (sync_identifier == GetBrawlFileIdentifier())
-    file = File::GetSysDirectory() + "Wii" + DIR_SEP + "title" + DIR_SEP + "00010000" + DIR_SEP + "52534245" + DIR_SEP + "data" + DIR_SEP + BRAWL_SAVE_FILE;
+    file = File::GetSysDirectory() + "Wii" + DIR_SEP + "title" + DIR_SEP + "00010000" + DIR_SEP +
+           "52534245" + DIR_SEP + "data" + DIR_SEP + BRAWL_SAVE_FILE;
 
   if (file.empty() || !File::Exists(file))
   {

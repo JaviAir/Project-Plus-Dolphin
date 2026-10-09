@@ -15,6 +15,7 @@
 #include "Core/CoreTiming.h"
 #include "Core/HW/EXI/EXI_Channel.h"
 #include "Core/HW/EXI/EXI_DeviceMemoryCard.h"
+#include "Core/HW/EXI/EXI_DeviceProjectPlusOnline.h"
 #include "Core/HW/GCMemcard/GCMemcard.h"
 #include "Core/HW/MMIO.h"
 #include "Core/HW/ProcessorInterface.h"
@@ -143,6 +144,10 @@ void ExpansionInterfaceManager::Init(const Sram* override_sram)
 
   for (Slot slot : MEMCARD_SLOTS)
     AddMemoryCard(slot);
+
+  // Explicit development opt-in; never replace a configured Slot B peripheral.
+  if (CEXIProjectPlusOnline::IsPrototypeEnabled())
+    m_channels[1]->AddDevice(EXIDeviceType::ProjectPlusOnline, 0);
 
   m_channels[0]->AddDevice(EXIDeviceType::MaskROM, 1);
 

@@ -48,10 +48,32 @@ bool QuickPlayController::Start()
                  m_region, [this, attempt = m_attempt](QuickPlayClient::Result result) {
                    if (attempt == m_attempt &&
                        (m_state == State::Searching || m_state == State::PublishingHostCode ||
-                        m_state == State::WaitingForHost))
+                        m_state == State::WaitingForHost || m_state == State::ValidatingMatch))
                      HandleResult(std::move(result));
                  });
   return true;
+}
+
+std::uint64_t QuickPlayController::GetGuestCancelAttempt() const
+{
+  switch (m_state)
+  {
+  case State::Searching:
+  case State::MatchedHost:
+  case State::MatchedClient:
+  case State::PreparingHandoff:
+  case State::WaitingForCoreStop:
+  case State::ValidatingMatch:
+  case State::CreatingHost:
+  case State::WaitingForTraversalCode:
+  case State::PublishingHostCode:
+  case State::WaitingForOpponent:
+  case State::WaitingForHost:
+  case State::Connecting:
+    return m_attempt;
+  default:
+    return 0;
+  }
 }
 
 void QuickPlayController::Cancel()
@@ -62,9 +84,9 @@ void QuickPlayController::Cancel()
   m_host_code.clear();
   m_match_id.clear();
   m_client.Cancel();
-  if (!m_creating_host && m_state != State::NetPlayConnected)
+  if (!m_creating_host && !m_joining && m_state != State::NetPlayOwned)
     m_cancel_host(cancelled_attempt);
-  if (m_state != State::Idle && m_state != State::NetPlayConnected)
+  if (m_state != State::Idle && m_state != State::NetPlayOwned)
     INFO_LOG_FMT(NETPLAY, "QuickPlay: cancelled");
   m_error_message.clear();
   SetState(State::Idle);
@@ -86,24 +108,29 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
     m_poll_timer.start();
     break;
   case QuickPlayClient::State::MatchedHost:
-    if (m_state != State::Searching)
-      return;
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: assigned host");
-    m_match_id = result.match_id;
-    SetState(State::MatchedHost);
-    m_setup_timer.start();
-    QTimer::singleShot(0, this, [this, attempt = m_attempt] { BeginHost(attempt); });
-    break;
   case QuickPlayClient::State::MatchedClient:
-    if (m_state != State::Searching)
-      return;
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: assigned client; waiting for host");
-    m_match_id = result.match_id;
-    SetState(State::MatchedClient);
-    SetState(State::WaitingForHost);
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: waiting for host code");
-    m_setup_timer.start();
-    m_client.PollMatch(m_match_id);
+    if (m_state == State::Searching)
+    {
+      ClaimMatch(result);
+    }
+    else if (m_state == State::ValidatingMatch)
+    {
+      if (result.match_id != m_match_id ||
+          (result.state == QuickPlayClient::State::MatchedHost) != m_is_host)
+      {
+        Fail(tr("The Quick Play assignment changed during shutdown. Cancel and try again."));
+        return;
+      }
+      if (m_is_host)
+      {
+        QTimer::singleShot(0, this, [this, attempt = m_attempt] { BeginHost(attempt); });
+      }
+      else
+      {
+        SetState(State::WaitingForHost);
+        m_client.PollMatch(m_match_id);
+      }
+    }
     break;
   case QuickPlayClient::State::WaitingForHost:
     if (m_state == State::WaitingForHost && result.match_id == m_match_id)
@@ -127,7 +154,7 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
   case QuickPlayClient::State::HostPublished:
     if (m_state != State::PublishingHostCode)
       return;
-    m_setup_timer.stop();
+    // Keep the bounded setup timeout until the opponent actually arrives.
     INFO_LOG_FMT(NETPLAY, "QuickPlay: host code published");
     INFO_LOG_FMT(NETPLAY, "QuickPlay: waiting for opponent");
     SetState(State::WaitingForOpponent);
@@ -137,6 +164,45 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
     Fail(std::move(result.error));
     break;
   }
+}
+
+void QuickPlayController::ClaimMatch(const QuickPlayClient::Result& result)
+{
+  // Ownership moves here, before any signal, dialog completion, or Core stop. Only host
+  // values are retained; the old EXI endpoint and guest generation die with the Core.
+  const auto attempt = m_attempt;
+  m_match_id = result.match_id;
+  m_is_host = result.state == QuickPlayClient::State::MatchedHost;
+  m_poll_timer.stop();
+  m_setup_timer.start();
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: claimed {} assignment, attempt {}",
+               m_is_host ? "host" : "client", attempt);
+  SetState(m_is_host ? State::MatchedHost : State::MatchedClient);
+  if (attempt != m_attempt)
+    return;
+  SetState(State::PreparingHandoff);
+  if (attempt != m_attempt)
+    return;
+  SetState(State::WaitingForCoreStop);
+  if (attempt == m_attempt)
+    emit PrepareHandoff(attempt);
+}
+
+void QuickPlayController::OnCoreStopped(std::uint64_t attempt, const QString& error)
+{
+  if (attempt != m_attempt || m_state != State::WaitingForCoreStop)
+    return;
+  if (!error.isEmpty())
+  {
+    Fail(error);
+    return;
+  }
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: old Core stopped, validating attempt {}", attempt);
+  SetState(State::ValidatingMatch);
+  // Recheck the real ticket after shutdown, before constructing any NetPlay object.
+  // This catches coordinator invalidation/peer cancellation while the Core stopped.
+  if (attempt == m_attempt)
+    m_client.Poll();
 }
 
 void QuickPlayController::BeginJoin(std::uint64_t attempt)
@@ -150,7 +216,10 @@ void QuickPlayController::BeginJoin(std::uint64_t attempt)
   // Existing synchronous NetPlay setup may enter a modal error loop. Cancel/close invalidates
   // this result there; never tear down an opened lobby or overwrite a newer attempt.
   if (attempt != m_attempt)
+  {
+    m_cancel_host(attempt);
     return;
+  }
   if (!joined)
   {
     WARN_LOG_FMT(NETPLAY, "QuickPlay: NetPlay join failed");
@@ -175,20 +244,38 @@ void QuickPlayController::OnHostOpponentConnected(quint64 attempt)
 void QuickPlayController::Complete()
 {
   m_poll_timer.stop();
-  m_setup_timer.stop();
+  m_setup_timer.start();
   // No connected acknowledgement exists. One bounded DELETE releases the rendezvous;
-  // the normal NetPlay session now owns the connection independently.
+  // readiness/launch remains attempt-owned until the normal BootGame callback.
   m_client.Cancel();
   m_match_id.clear();
   m_host_code.clear();
   SetState(State::NetPlayConnected);
 }
 
+void QuickPlayController::OnLaunchOwned(std::uint64_t attempt)
+{
+  if (attempt != m_attempt || m_state != State::NetPlayConnected)
+    return;
+  m_setup_timer.stop();
+  ++m_attempt;  // Invalidate every queued setup callback before notifying observers.
+  SetState(State::NetPlayOwned);
+}
+
+void QuickPlayController::OnLaunchFailed(std::uint64_t attempt, const QString& error)
+{
+  if (attempt == m_attempt && m_state != State::Idle && m_state != State::Error &&
+      m_state != State::NetPlayOwned)
+    Fail(error);
+}
+
 void QuickPlayController::BeginHost(std::uint64_t attempt)
 {
-  if (attempt != m_attempt || m_state != State::MatchedHost)
+  if (attempt != m_attempt || m_state != State::ValidatingMatch)
     return;
   SetState(State::CreatingHost);
+  if (attempt != m_attempt)
+    return;
   INFO_LOG_FMT(NETPLAY, "QuickPlay: creating NetPlay host");
   m_creating_host = true;
   const auto error = m_start_host(attempt);
@@ -242,7 +329,8 @@ void QuickPlayController::OnHostTraversalChanged(quint64 attempt, const QString&
 
 void QuickPlayController::OnHostClosed(std::uint64_t attempt)
 {
-  if (attempt == m_attempt && m_state != State::Idle && m_state != State::Error)
+  if (attempt == m_attempt && m_state != State::Idle && m_state != State::Error &&
+      m_state != State::NetPlayOwned)
     Fail(tr("The Quick Play NetPlay room was closed. Cancel and try again."));
 }
 

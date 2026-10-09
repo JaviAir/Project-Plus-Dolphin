@@ -52,6 +52,7 @@
 #include "Core/HW/CPU.h"
 #include "Core/HW/DSP.h"
 #include "Core/HW/EXI/EXI.h"
+#include "Core/HW/EXI/EXI_DeviceProjectPlusOnline.h"
 #include "Core/HW/GBAPad.h"
 #include "Core/HW/GCKeyboard.h"
 #include "Core/HW/GCPad.h"
@@ -599,6 +600,12 @@ static void EmuThread(Core::System& system, std::unique_ptr<BootParameters> boot
     system.GetPowerPC().GetDebugInterface().Clear(guard);
   }};
 
+  // Stop may have arrived before HW::Init reset the CPU to Stepping. In that case
+  // entering the CPU loop would wait forever with Core already Stopping. Unwind
+  // the initialized hardware instead (for example when a NetPlay peer cannot boot).
+  if (s_state.load() == State::Stopping)
+    return;
+
   // In single-core mode: This holds a video backend shutdown function.
   // In dual-core mode: This holds a GPU thread stopping function (which does the backend shutdown).
   const auto video_guard = GetInitializedVideoGuard(system, wsi);
@@ -948,6 +955,8 @@ void UpdateWantDeterminism(Core::System& system, bool initial)
     NOTICE_LOG_FMT(COMMON, "Want determinism <- {}", new_want_determinism ? "true" : "false");
 
     s_wants_determinism = new_want_determinism;
+    if (new_want_determinism)
+      ExpansionInterface::InvalidateProjectPlusOnline(system);
     const auto ios = system.GetIOS();
     if (ios)
       ios->UpdateWantDeterminism(new_want_determinism);

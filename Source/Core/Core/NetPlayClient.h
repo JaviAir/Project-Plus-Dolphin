@@ -5,6 +5,7 @@
 
 #include <SFML/Network/Packet.hpp>
 #include <array>
+#include <atomic>
 #include <chrono>
 #include <map>
 #include <memory>
@@ -57,7 +58,7 @@ public:
   virtual void OnMsgChangeGame(const SyncIdentifier& sync_identifier,
                                const std::string& netplay_name) = 0;
   virtual void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) = 0;
-  virtual void OnMsgStartGame() = 0;
+  virtual void OnMsgStartGame(u32 game_id) = 0;
   virtual void OnMsgStopGame() = 0;
   virtual void OnMsgPowerButton() = 0;
   virtual void OnPlayerConnect(const std::string& player) = 0;
@@ -71,8 +72,7 @@ public:
   virtual void OnTraversalError(Common::TraversalClient::FailureReason error) = 0;
   virtual void OnTraversalStateChanged(Common::TraversalClient::State state) = 0;
   // Host-owned value snapshot; default no-op for other frontends.
-  virtual void OnHostTraversalStateChanged(u64, Common::TraversalClient::State,
-                                           const std::string&)
+  virtual void OnHostTraversalStateChanged(u64, Common::TraversalClient::State, const std::string&)
   {
   }
   virtual void OnGameStartAborted() = 0;
@@ -126,10 +126,23 @@ public:
   ~NetPlayClient() override;
 
   std::vector<const Player*> GetPlayers();
+  struct LobbyState
+  {
+    std::vector<Player> players;
+    PadMappingArray pads;
+    PadMappingArray wiimotes;
+    GBAConfigArray gba;
+    SyncIdentifier game;
+    PlayerId local_player;
+    bool connected;
+    u32 current_game;
+  };
+  // Values, never pointers into the player map which a disconnect can invalidate.
+  LobbyState GetLobbyState();
   const NetSettings& GetNetSettings() const;
 
   // Called from the GUI thread.
-  bool IsConnected() const { return m_is_connected; }
+  bool IsConnected() const { return m_is_connected && !m_connection_lost; }
   bool StartGame(const std::string& path);
   void InvokeStop();
   bool StopGame();
@@ -174,7 +187,7 @@ public:
 
   static void SendTimeBase();
   bool DoAllPlayersHaveGame();
-  
+
   void AdjustPlayerPadBufferSize(u32 buffer);
 
   // the number of ticks in-between frames
@@ -355,7 +368,8 @@ private:
   void OnGameDigestError(sf::Packet& packet);
   void OnGameDigestAbort();
 
-  bool m_is_connected = false;
+  bool m_is_connected = false;  // Successful construction; also owns the network thread.
+  std::atomic<bool> m_connection_lost{false};
   ConnectionState m_connection_state = ConnectionState::Failure;
 
   PlayerId m_pid = 0;

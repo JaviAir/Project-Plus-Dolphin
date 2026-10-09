@@ -4,6 +4,7 @@
 #include "DolphinQt/MainWindow.h"
 
 #include <QApplication>
+#include <QByteArray>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -12,14 +13,14 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QIcon>
+#include <QJsonDocument>
+#include <QMessageBox>
 #include <QMimeData>
 #include <QStackedWidget>
 #include <QStyleHints>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
-#include <QMessageBox>
-#include <QByteArray>
-#include <QJsonDocument>
 
 #include <fmt/format.h>
 
@@ -40,13 +41,12 @@
 
 #include "Common/Config/Config.h"
 #include "Common/FileUtil.h"
-#include "Common/ScopeGuard.h"
-#include "Common/Version.h"
-#include "Common/WindowSystemInfo.h"
 #include "Common/HttpRequest.h"
-#include "Common/scmrev.h"
 #include "Common/ScopeGuard.h"
 #include "Common/StringUtil.h"
+#include "Common/Version.h"
+#include "Common/WindowSystemInfo.h"
+#include "Common/scmrev.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/Boot/Boot.h"
@@ -72,6 +72,7 @@
 #include "Core/NetPlayClient.h"
 #include "Core/NetPlayProto.h"
 #include "Core/NetPlayServer.h"
+#include "Core/ProjectPlusOnline/Status.h"
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
@@ -115,10 +116,6 @@
 #include "DolphinQt/NetPlay/NetPlaySetupDialog.h"
 #include "DolphinQt/ProjectPlus/InstallUpdateDialog.h"
 #include "DolphinQt/ProjectPlus/UpdateDialog.h"
-#include "DolphinQt/QuickPlay/QuickPlayController.h"
-#include "DolphinQt/QuickPlay/QuickPlayDialog.h"
-#include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
-#include "DolphinQt/QuickPlay/QuickPlaySettingsDialog.h"
 #include "DolphinQt/QtUtils/DolphinFileDialog.h"
 #include "DolphinQt/QtUtils/FileOpenEventFilter.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
@@ -126,6 +123,10 @@
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
 #include "DolphinQt/QtUtils/WindowActivationEventFilter.h"
+#include "DolphinQt/QuickPlay/QuickPlayController.h"
+#include "DolphinQt/QuickPlay/QuickPlayDialog.h"
+#include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
+#include "DolphinQt/QuickPlay/QuickPlaySettingsDialog.h"
 #include "DolphinQt/RenderWidget.h"
 #include "DolphinQt/ResourcePackManager.h"
 #include "DolphinQt/Resources.h"
@@ -274,6 +275,11 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   InitCoreCallbacks();
 
   NetPlayInit();
+
+  auto* status_timer = new QTimer(this);
+  connect(status_timer, &QTimer::timeout, this, &MainWindow::PublishQuickPlayStatus);
+  status_timer->start(100);
+  PublishQuickPlayStatus();
 
 #ifdef SHOW_UPDATER
   CheckForUpdatesAuto();
@@ -440,8 +446,16 @@ void MainWindow::ShutdownControllers()
 void MainWindow::InitCoreCallbacks()
 {
   connect(&Settings::Instance(), &Settings::EmulationStateChanged, this, [this](Core::State state) {
+    if (state == Core::State::Stopping && m_quickplay_session)
+      EndQuickPlaySession(true);
     if (state == Core::State::Uninitialized)
       OnStopComplete();
+    if (state == Core::State::Running && m_quickplay_recovery == QuickPlayRecovery::Booting)
+    {
+      m_quickplay_recovery = QuickPlayRecovery::None;
+      m_quickplay_controller->Cancel();
+      INFO_LOG_FMT(NETPLAY, "QuickPlay: local recovery running");
+    }
 
     if (state == Core::State::Running && m_fullscreen_requested)
     {
@@ -723,13 +737,14 @@ void MainWindow::ConnectToolBar()
   connect(m_tool_bar, &ToolBar::StopPressed, this, &MainWindow::RequestStop);
   connect(m_tool_bar, &ToolBar::FullScreenPressed, this, &MainWindow::FullScreen);
   connect(m_tool_bar, &ToolBar::ScreenShotPressed, this, &MainWindow::ScreenShot);
-  connect(m_tool_bar, &ToolBar::NetPlaySetupDialogPressed, this, &MainWindow::ShowNetPlaySetupDialog);
+  connect(m_tool_bar, &ToolBar::NetPlaySetupDialogPressed, this,
+          &MainWindow::ShowNetPlaySetupDialog);
   connect(m_tool_bar, &ToolBar::QuickPlayPressed, this, &MainWindow::StartQuickPlay);
   connect(m_tool_bar, &ToolBar::QuickPlaySettingsPressed, this, &MainWindow::ShowQuickPlaySettings);
   connect(m_tool_bar, &ToolBar::SettingsPressed, this, &MainWindow::ShowSettingsWindow);
   connect(m_tool_bar, &ToolBar::ControllersPressed, this, &MainWindow::ShowControllersWindow);
   connect(m_tool_bar, &ToolBar::GraphicsPressed, this, &MainWindow::ShowGraphicsWindow);
-  #ifdef SHOW_UPDATER
+#ifdef SHOW_UPDATER
   connect(m_tool_bar, &ToolBar::InstallUpdateManuallyPressed, this, &MainWindow::ShowUpdateDialog);
 #endif  // SHOW_UPDATER
 
@@ -766,6 +781,23 @@ void MainWindow::ConnectRenderWidget()
 void MainWindow::ConnectHost()
 {
   connect(Host::GetInstance(), &Host::RequestStop, this, &MainWindow::RequestStop);
+  // The Core host job already marshals to this thread and validates its lifetime.
+  // Do not queue again: a queued signal could outlive reset/load invalidation.
+  connect(Host::GetInstance(), &Host::RequestQuickPlay, this, &MainWindow::StartQuickPlay);
+  connect(
+      Host::GetInstance(), &Host::RequestQuickPlayCancel, this,
+      [this] {
+        // Synchronous GUI delivery from the guarded Core host job. No event-loop
+        // boundary between its identity check and the canonical desktop Cancel.
+        const auto attempt = ProjectPlusOnline::guest_cancel_attempt.load();
+        if (attempt && m_quickplay_controller &&
+            m_quickplay_controller->GetGuestCancelAttempt() == attempt)
+        {
+          m_quickplay_controller->Cancel();
+          PublishQuickPlayStatus();
+        }
+      },
+      Qt::DirectConnection);
 }
 
 void MainWindow::ConnectStack()
@@ -957,7 +989,40 @@ void MainWindow::TogglePause()
 
 void MainWindow::OnStopComplete()
 {
+  if (!Core::IsUninitialized(m_system))
+    return;
   m_stop_requested = false;
+  if (m_quickplay_recovery == QuickPlayRecovery::WaitingForStop)
+  {
+    m_quickplay_recovery = QuickPlayRecovery::Queued;
+    // Let the old Core's observers drain before destroying the old lobby or booting.
+    QTimer::singleShot(0, this, &MainWindow::FinishQuickPlayRecovery);
+    return;
+  }
+  if (m_quickplay_recovery == QuickPlayRecovery::Queued ||
+      m_quickplay_recovery == QuickPlayRecovery::Releasing)
+    return;
+  if (m_quickplay_recovery == QuickPlayRecovery::Booting)
+  {
+    m_quickplay_recovery = QuickPlayRecovery::None;
+    m_quickplay_controller->Cancel();
+  }
+  if (m_quickplay_retain_window && !m_exit_requested &&
+      !Settings::Instance().IsBatchModeEnabled() && !m_pending_boot)
+  {
+    const auto attempt = std::exchange(m_quickplay_stop_attempt, 0);
+    if (attempt)
+    {
+      // Drain every observer of the old Uninitialized notification before creating a
+      // lobby: NetPlayDialog also handles that notification and must see no new session.
+      QTimer::singleShot(0, this, [this, attempt] {
+        if (m_quickplay_retain_window && !m_exit_requested && !m_pending_boot &&
+            Core::IsUninitialized(m_system) && m_quickplay_controller->OwnsAttempt(attempt))
+          m_quickplay_controller->OnCoreStopped(attempt);
+      });
+    }
+    return;
+  }
   HideRenderWidget(!m_exit_requested, m_exit_requested);
 #ifdef USE_DISCORD_PRESENCE
   if (!m_netplay_dialog->isVisible())
@@ -988,6 +1053,18 @@ void MainWindow::OnStopComplete()
 
 bool MainWindow::RequestStop()
 {
+  // A close during the deferred stop continuation must cancel the reboot, while
+  // leaving its sole teardown owner alive to release the old session.
+  if (m_quickplay_recovery != QuickPlayRecovery::None)
+    m_quickplay_recovery_restart = false;
+  if (m_quickplay_retain_window || m_quickplay_stop_attempt)
+  {
+    if (m_quickplay_controller &&
+        m_quickplay_controller->GetState() != QuickPlayController::State::NetPlayOwned)
+      m_quickplay_controller->Cancel();
+    m_quickplay_stop_attempt = 0;
+    m_quickplay_retain_window = false;
+  }
   if (Core::IsUninitialized(m_system))
   {
     Core::QueueHostJob([this](Core::System&) { OnStopComplete(); }, true);
@@ -1078,6 +1155,15 @@ bool MainWindow::RequestStop()
       // This needs to be after SetCursorLockedOnNextActivation(false) as it depends on it
       m_render_widget->SetWaitingForMessageBox(false);
     }
+  }
+
+  if (m_quickplay_session || m_quickplay_recovery != QuickPlayRecovery::None)
+  {
+    // Guest power events are asynchronous to synchronized pad input. End this
+    // session using the normal NetPlay stop notification instead of guest shutdown.
+    EndQuickPlaySession(false);
+    ForceStop();
+    return true;
   }
 
   OnStopRecording();
@@ -1238,6 +1324,12 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
     }
   }
 
+  // Only the guarded NetPlay BootGame callback may consume an owned handoff.
+  if (m_quickplay_setup || m_quickplay_recovery == QuickPlayRecovery::WaitingForStop ||
+      m_quickplay_recovery == QuickPlayRecovery::Queued ||
+      m_quickplay_recovery == QuickPlayRecovery::Releasing)
+    return;
+
   // If we're running, only start a new game once we've stopped the last.
   if (!Core::IsUninitialized(m_system))
   {
@@ -1249,6 +1341,8 @@ void MainWindow::StartGame(std::unique_ptr<BootParameters>&& parameters)
     return;
   }
 
+  // The retained-window lease ends when an explicit later boot consumes the window.
+  m_quickplay_retain_window = false;
   // We need the render widget before booting.
   ShowRenderWidget();
 
@@ -1444,77 +1538,82 @@ void MainWindow::ShowAboutDialog()
   about.exec();
 }
 
-// P+ change: New updater; credit to RainbowTabitha and the Mario Party Netplay team for the base code!
+// P+ change: New updater; credit to RainbowTabitha and the Mario Party Netplay team for the base
+// code!
 
 #ifdef SHOW_UPDATER
 void MainWindow::ShowUpdateDialog()
 {
-    Common::HttpRequest httpRequest;
+  Common::HttpRequest httpRequest;
 
-    // Make the GET request
-    auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/Project-Plus-Dolphin/releases/latest");
+  // Make the GET request
+  auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/"
+                                  "Project-Plus-Dolphin/releases/latest");
 
-    if (response)
+  if (response)
+  {
+    // Access the underlying vector and convert it to QByteArray
+    QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+    // Parse the JSON response
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+    QJsonObject jsonObject = jsonDoc.object();
+
+    QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+    QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+    if (currentVersion != latestVersion)
     {
-        // Access the underlying vector and convert it to QByteArray
-        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-        // Parse the JSON response
-        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-        QJsonObject jsonObject = jsonDoc.object();
-      
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
-        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-        if (currentVersion != latestVersion)
-        {
-          // Create and show the UpdateDialog with the fetched data
-          bool forced = false; // Set this based on your logic
-          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-          updater.exec();
-        } else {
-          QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
-        }
+      // Create and show the UpdateDialog with the fetched data
+      bool forced = false;  // Set this based on your logic
+      UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+      updater.exec();
     }
     else
     {
-        // Handle error
-        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+      QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
     }
+  }
+  else
+  {
+    // Handle error
+    QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+  }
 }
 
 void MainWindow::CheckForUpdatesAuto()
 {
-    Common::HttpRequest httpRequest;
+  Common::HttpRequest httpRequest;
 
-    // Make the GET request
-    auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/Project-Plus-Dolphin/releases/latest");
+  // Make the GET request
+  auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/"
+                                  "Project-Plus-Dolphin/releases/latest");
 
-    if (response)
+  if (response)
+  {
+    // Access the underlying vector and convert it to QByteArray
+    QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+    // Parse the JSON response
+    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+    QJsonObject jsonObject = jsonDoc.object();
+
+    QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+    QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+    if (currentVersion != latestVersion)
     {
-        // Access the underlying vector and convert it to QByteArray
-        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-        // Parse the JSON response
-        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-        QJsonObject jsonObject = jsonDoc.object();
-      
-        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
-        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-        if (currentVersion != latestVersion)
-        {
-          // Create and show the UpdateDialog with the fetched data
-          bool forced = false; // Set this based on your logic
-          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-          updater.exec();
-        }
+      // Create and show the UpdateDialog with the fetched data
+      bool forced = false;  // Set this based on your logic
+      UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+      updater.exec();
     }
-    else
-    {
-        // Handle error
-        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
-    }
+  }
+  else
+  {
+    // Handle error
+    QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+  }
 }
 #endif  // SHOW_UPDATER
 
@@ -1554,27 +1653,113 @@ void MainWindow::ShowQuickPlaySettings()
   m_quickplay_settings_dialog->Open();
 }
 
+void MainWindow::PublishQuickPlayStatus()
+{
+  using ProjectPlusOnline::GuestStatus;
+  using ProjectPlusOnline::Reason;
+  using State = QuickPlayController::State;
+  const auto publish = [this](GuestStatus status, Reason reason = Reason::None) {
+    const auto attempt = m_quickplay_controller &&
+                                 m_quickplay_recovery == QuickPlayRecovery::None &&
+                                 ProjectPlusOnline::IsCancellable(status) ?
+                             m_quickplay_controller->GetGuestCancelAttempt() :
+                             0;
+    if (ProjectPlusOnline::guest_cancel_attempt.load() != attempt)
+      ProjectPlusOnline::guest_cancel_attempt = 0;
+    if (ProjectPlusOnline::IsCancellable(status) && !attempt)
+      reason = Reason::Lifecycle;
+    ProjectPlusOnline::guest_status.Publish(status, reason);
+    ProjectPlusOnline::guest_cancel_attempt = attempt;
+  };
+  if (m_quickplay_recovery != QuickPlayRecovery::None)
+    return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (client)
+  {
+    const auto lobby = client->GetLobbyState();
+    if (lobby.connected && lobby.players.size() >= 2)
+      return publish(GuestStatus::Connected);
+  }
+  if (client || Settings::Instance().GetNetPlayServer() || m_quickplay_session)
+    return publish(GuestStatus::Connecting);
+  if (m_quickplay_stop_attempt && m_quickplay_setup &&
+      m_quickplay_controller->OwnsAttempt(m_quickplay_stop_attempt))
+  {
+    if (m_quickplay_presentation == QuickPlayPresentation::Matched)
+      return publish(GuestStatus::Matched);
+    if (m_quickplay_presentation == QuickPlayPresentation::Connecting)
+      return publish(GuestStatus::Connecting);
+  }
+  const auto state = m_quickplay_controller ? m_quickplay_controller->GetState() : State::Idle;
+  switch (state)
+  {
+  case State::Idle:
+    if (Core::GetState(m_system) == Core::State::Stopping)
+      return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+    return publish(m_quickplay_setup ? GuestStatus::Connecting : GuestStatus::Idle);
+  case State::Searching:
+    return publish(GuestStatus::Searching);
+  case State::MatchedHost:
+  case State::MatchedClient:
+    return publish(GuestStatus::Matched);
+  case State::Error:
+    return publish(GuestStatus::Error, Reason::AttemptFailed);
+  case State::NetPlayConnected:
+  case State::NetPlayOwned:
+    return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+  default:
+    return publish(GuestStatus::Connecting);
+  }
+}
+
 void MainWindow::StartQuickPlay()
 {
+  if (m_quickplay_recovery != QuickPlayRecovery::None)
+    return;
+  // A connected session belongs to the normal lobby, independently of the search dialog.
+  if (Settings::Instance().GetNetPlayServer() || Settings::Instance().GetNetPlayClient() ||
+      m_netplay_dialog->isVisible())
+    return;
+
   if (m_quickplay_settings_dialog && m_quickplay_settings_dialog->isVisible())
     return;
 
+  if (Core::GetState(m_system) == Core::State::Stopping || m_quickplay_stop_attempt)
+    return;
   m_tool_bar->SetQuickPlayActive(true);
   if (!m_quickplay_controller)
   {
-    m_quickplay_controller =
-        new QuickPlayController([this](u64 attempt) { return StartQuickPlayHost(attempt); },
-                                [this](u64 attempt) { CancelQuickPlayHost(attempt); },
-                                [this](const QString& code) { return JoinQuickPlayHost(code); }, this);
+    m_quickplay_controller = new QuickPlayController(
+        [this](u64 attempt) { return StartQuickPlayHost(attempt); },
+        [this](u64 attempt) { CancelQuickPlayHost(attempt); },
+        [this](const QString& code) { return JoinQuickPlayHost(code); }, this);
+    connect(m_quickplay_controller, &QuickPlayController::PrepareHandoff, this,
+            &MainWindow::PrepareQuickPlayHandoff);
     connect(m_netplay_dialog, &NetPlayDialog::HostTraversalChanged, m_quickplay_controller,
             &QuickPlayController::OnHostTraversalChanged);
     connect(m_netplay_dialog, &NetPlayDialog::QuickPlayOpponentConnected, m_quickplay_controller,
             &QuickPlayController::OnHostOpponentConnected);
     connect(m_quickplay_controller, &QuickPlayController::StateChanged, this,
             [this](QuickPlayController::State state) {
-              if (state == QuickPlayController::State::NetPlayConnected)
-                m_quickplay_host_attempt = 0;  // The normal lobby now owns the session.
-              m_tool_bar->SetQuickPlayActive(state != QuickPlayController::State::Idle);
+              PublishQuickPlayStatus();
+              if (state == QuickPlayController::State::NetPlayConnected && m_quickplay_setup)
+              {
+                const auto attempt = m_quickplay_setup->attempt;
+                if (m_quickplay_retain_window)
+                {
+                  QTimer::singleShot(0, this, [this, attempt] { CheckQuickPlayLaunch(attempt); });
+                }
+                else
+                {
+                  // Desktop Quick Play still hands a normal lobby to the user.
+                  m_quickplay_host_attempt = 0;
+                  m_quickplay_join_attempt = 0;
+                  m_quickplay_setup.reset();
+                  m_quickplay_controller->OnLaunchOwned(attempt);
+                }
+              }
+              m_tool_bar->SetQuickPlayActive(state != QuickPlayController::State::Idle &&
+                                             state != QuickPlayController::State::NetPlayOwned);
             });
     m_quickplay_dialog = new QuickPlayDialog(*m_quickplay_controller, this);
   }
@@ -1584,6 +1769,231 @@ void MainWindow::StartQuickPlay()
   m_quickplay_dialog->show();
   m_quickplay_dialog->raise();
   m_quickplay_dialog->activateWindow();
+}
+
+void MainWindow::PrepareQuickPlayHandoff(u64 attempt)
+{
+  if (!m_quickplay_controller->OwnsAttempt(attempt))
+    return;
+  const auto state = Core::GetState(m_system);
+  if (m_exit_requested || m_pending_boot || Settings::Instance().IsBatchModeEnabled() ||
+      Settings::Instance().GetNetPlayClient() || Settings::Instance().GetNetPlayServer() ||
+      m_netplay_dialog->isVisible() ||
+      (state != Core::State::Uninitialized && state != Core::State::Running &&
+       state != Core::State::Paused))
+  {
+    m_quickplay_controller->OnCoreStopped(attempt, tr("The local game cannot hand off right now."));
+    return;
+  }
+  if (state != Core::State::Uninitialized &&
+      (QGuiApplication::platformName() != QStringLiteral("xcb") || m_rendering_to_main ||
+       !m_render_widget->isVisible() || Config::Get(Config::MAIN_GFX_BACKEND) != "OGL"))
+  {
+    m_quickplay_controller->OnCoreStopped(
+        attempt, tr("In-game Quick Play currently requires an external window with XCB/OpenGL."));
+    return;
+  }
+  m_quickplay_setup = QuickPlaySetup{attempt,
+                                     Config::Get(Config::NETPLAY_TRAVERSAL_SERVER),
+                                     Config::Get(Config::NETPLAY_TRAVERSAL_PORT),
+                                     Config::Get(Config::NETPLAY_TRAVERSAL_PORT_ALT),
+                                     Config::Get(Config::NETPLAY_LISTEN_PORT),
+                                     Config::Get(Config::NETPLAY_NICKNAME),
+                                     Config::Get(Config::NETPLAY_NETWORK_MODE),
+                                     Config::Get(Config::NETPLAY_MINIMUM_BUFFER_SIZE),
+                                     Config::Get(Config::NETPLAY_USE_UPNP)};
+  if (state == Core::State::Uninitialized)
+  {
+    QTimer::singleShot(0, this, [this, attempt] {
+      if (Core::IsUninitialized(m_system) && !m_exit_requested)
+        m_quickplay_controller->OnCoreStopped(attempt);
+    });
+    return;
+  }
+  m_quickplay_stop_attempt = attempt;
+  m_quickplay_retain_window = true;
+  m_quickplay_setup->window = m_render_widget;
+  m_quickplay_setup->native_window = static_cast<u64>(m_render_widget->winId());
+  // Bounded local presentation stages owned by the assigned handoff. The guest
+  // renders snapshots only; no ACK, guest timer or renderer can hold up shutdown.
+  m_quickplay_presentation = QuickPlayPresentation::Matched;
+  PublishQuickPlayStatus();
+  QTimer::singleShot(500, this, [this, attempt] { AdvanceQuickPlayPresentation(attempt); });
+}
+
+void MainWindow::AdvanceQuickPlayPresentation(u64 attempt)
+{
+  if (!m_quickplay_setup || m_quickplay_stop_attempt != attempt ||
+      !m_quickplay_controller->OwnsAttempt(attempt) ||
+      m_quickplay_controller->GetState() != QuickPlayController::State::WaitingForCoreStop)
+    return;
+  const auto state = Core::GetState(m_system);
+  if (m_exit_requested || m_pending_boot ||
+      (state != Core::State::Running && state != Core::State::Paused))
+    return;
+  if (m_quickplay_presentation == QuickPlayPresentation::Matched)
+  {
+    m_quickplay_presentation = QuickPlayPresentation::Connecting;
+    PublishQuickPlayStatus();
+    QTimer::singleShot(500, this, [this, attempt] { AdvanceQuickPlayPresentation(attempt); });
+    return;
+  }
+  if (m_quickplay_presentation != QuickPlayPresentation::Connecting)
+    return;
+  m_quickplay_presentation = QuickPlayPresentation::None;
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: stopping local Core, attempt {}", attempt);
+  Core::Stop(m_system);
+}
+
+bool MainWindow::IsQuickPlayLaunchReady(u64 attempt)
+{
+  if (!m_quickplay_setup || m_quickplay_setup->attempt != attempt ||
+      !m_quickplay_controller->OwnsAttempt(attempt) ||
+      m_quickplay_controller->GetState() != QuickPlayController::State::NetPlayConnected ||
+      m_exit_requested || m_pending_boot || !Core::IsUninitialized(m_system) ||
+      m_rendering_to_main || Config::Get(Config::MAIN_RENDER_TO_MAIN) ||
+      Config::Get(Config::MAIN_GFX_BACKEND) != "OGL" || !m_quickplay_retain_window ||
+      m_quickplay_setup->window != m_render_widget || !m_render_widget->isVisible() ||
+      m_quickplay_setup->native_window != static_cast<u64>(m_render_widget->effectiveWinId()))
+    return false;
+  const auto server = Settings::Instance().GetNetPlayServer();
+  if (m_quickplay_setup->client != Settings::Instance().GetNetPlayClient().get() ||
+      m_quickplay_setup->server != server.get())
+    return false;
+  if (m_quickplay_host_attempt == attempt)
+  {
+    if (!server || server->GetQuickPlayAttempt() != attempt)
+      return false;
+  }
+  else if (m_quickplay_join_attempt != attempt || server)
+  {
+    return false;
+  }
+  return m_netplay_dialog->IsQuickPlayReady();
+}
+
+void MainWindow::CheckQuickPlayLaunch(u64 attempt)
+{
+  if (!m_quickplay_setup || m_quickplay_setup->attempt != attempt ||
+      !m_quickplay_controller->OwnsAttempt(attempt))
+    return;
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (!client || !client->IsConnected())
+  {
+    m_quickplay_controller->OnLaunchFailed(attempt, tr("The Quick Play peer disconnected."));
+    return;
+  }
+  if (!m_quickplay_setup->start_requested && IsQuickPlayLaunchReady(attempt) &&
+      !QApplication::activeModalWidget() && m_quickplay_host_attempt == attempt)
+  {
+    m_quickplay_setup->start_requested = true;
+    INFO_LOG_FMT(NETPLAY, "QuickPlay: readiness satisfied; normal host Start Game, attempt {}",
+                 attempt);
+    if (!m_netplay_dialog->StartQuickPlayGame(attempt))
+    {
+      m_quickplay_controller->OnLaunchFailed(attempt, tr("NetPlay could not start the game."));
+      return;
+    }
+  }
+  QTimer::singleShot(100, this, [this, attempt] { CheckQuickPlayLaunch(attempt); });
+}
+
+void MainWindow::ReleaseQuickPlayWindow()
+{
+  m_quickplay_presentation = QuickPlayPresentation::None;
+  m_quickplay_stop_attempt = 0;
+  if (std::exchange(m_quickplay_retain_window, false) && Core::IsUninitialized(m_system))
+  {
+    HideRenderWidget();
+    SetFullScreenResolution(false);
+  }
+  // During Stopping the normal OnStopComplete performs the same cleanup.
+}
+
+void MainWindow::EndQuickPlaySession(bool restart)
+{
+  if (m_quickplay_recovery != QuickPlayRecovery::None)
+  {
+    if (!restart)
+      m_quickplay_recovery_restart = false;
+    return;
+  }
+  if (!std::exchange(m_quickplay_session, false))
+    return;
+
+  m_quickplay_recovery = QuickPlayRecovery::WaitingForStop;
+  m_quickplay_recovery_restart = restart && !m_exit_requested && !m_pending_boot &&
+                                 m_render_widget && m_render_widget->isVisible();
+  m_quickplay_retain_window = m_quickplay_recovery_restart;
+  if (!restart)
+  {
+    if (const auto client = Settings::Instance().GetNetPlayClient())
+      client->RequestStopGame();
+  }
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: ending session, local restart {}",
+               m_quickplay_recovery_restart);
+}
+
+void MainWindow::FinishQuickPlayRecovery()
+{
+  if ((m_quickplay_recovery != QuickPlayRecovery::Queued &&
+       m_quickplay_recovery != QuickPlayRecovery::Releasing) ||
+      !Core::IsUninitialized(m_system))
+    return;
+
+  if (m_quickplay_recovery == QuickPlayRecovery::Queued)
+  {
+    // Core and boot configuration cleanup has finished. Release presentation
+    // ownership too; the golf overlay can hold a client reference.
+    m_quickplay_recovery = QuickPlayRecovery::Releasing;
+    m_quickplay_retiring_client = Settings::Instance().GetNetPlayClient();
+    m_quickplay_retiring_server = Settings::Instance().GetNetPlayServer();
+    m_netplay_dialog->hide();
+    m_netplay_dialog->ResetSession();
+    Settings::Instance().ResetNetPlayClient();
+    Settings::Instance().ResetNetPlayServer();
+  }
+  // A nested modal callback can still hold a session reference. Never boot a new
+  // Core until those references unwind and both network-thread destructors finish.
+  if (!m_quickplay_retiring_client.expired() || !m_quickplay_retiring_server.expired() ||
+      QApplication::activeModalWidget())
+  {
+    QTimer::singleShot(25, this, &MainWindow::FinishQuickPlayRecovery);
+    return;
+  }
+  // Invalidate even notifications produced while the last reference was retiring.
+  m_netplay_dialog->ResetSession();
+  m_quickplay_host_attempt = 0;
+  m_quickplay_join_attempt = 0;
+
+  if (!m_quickplay_recovery_restart || m_exit_requested || m_pending_boot ||
+      !m_quickplay_retain_window || !m_render_widget->isVisible())
+  {
+    m_quickplay_recovery = QuickPlayRecovery::None;
+    m_quickplay_retain_window = false;
+    m_quickplay_controller->Cancel();
+    OnStopComplete();
+    return;
+  }
+
+  const auto launcher = FindPPlusNetplayLauncher(m_game_list->GetGameListModel());
+  if (!launcher.game)
+  {
+    m_quickplay_recovery = QuickPlayRecovery::None;
+    m_quickplay_controller->Cancel();
+    ReleaseQuickPlayWindow();
+    ModalMessageBox::critical(this, tr("Quick Play"), launcher.error);
+    return;
+  }
+
+  m_quickplay_recovery = QuickPlayRecovery::Booting;
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: booting local recovery");
+  StartGame(launcher.game->GetFilePath(), ScanForSecondDisc::Yes);
+  if (Core::IsUninitialized(m_system) && m_quickplay_recovery == QuickPlayRecovery::Booting)
+  {
+    m_quickplay_recovery = QuickPlayRecovery::None;
+    m_quickplay_controller->Cancel();
+  }
 }
 
 void MainWindow::ShowNetPlaySetupDialog()
@@ -1772,13 +2182,60 @@ void MainWindow::NetPlayInit()
   m_netplay_dialog = new NetPlayDialog(
       game_list_model,
       [this](const std::string& path, std::unique_ptr<BootSessionData> boot_session_data) {
+        if (m_quickplay_setup)
+        {
+          const auto attempt = m_quickplay_setup->attempt;
+          if (!NetPlay::IsNetPlayRunning() || !IsQuickPlayLaunchReady(attempt))
+          {
+            QTimer::singleShot(0, this, [this, attempt] {
+              m_quickplay_controller->OnLaunchFailed(attempt,
+                                                     tr("Quick Play launch was invalidated."));
+            });
+            return;
+          }
+          INFO_LOG_FMT(NETPLAY, "QuickPlay: NetPlay owns boot, attempt {}", attempt);
+          const auto* retained_window = m_render_widget;
+          const auto native_window = m_quickplay_setup->native_window;
+          m_quickplay_host_attempt = 0;
+          m_quickplay_join_attempt = 0;
+          m_quickplay_setup.reset();
+          m_netplay_dialog->ReleaseQuickPlayStart();
+          m_quickplay_controller->OnLaunchOwned(attempt);
+          // Ownership observers may close the window before the fresh boot is entered.
+          if (!m_quickplay_retain_window || m_exit_requested ||
+              m_render_widget != retained_window || !m_render_widget->isVisible() ||
+              static_cast<u64>(m_render_widget->effectiveWinId()) != native_window)
+          {
+            if (const auto client = Settings::Instance().GetNetPlayClient())
+              client->RequestStopGame();
+            return;
+          }
+          m_quickplay_session = true;
+        }
+        const auto client = Settings::Instance().GetNetPlayClient();
         StartGame(path, ScanForSecondDisc::Yes, std::move(boot_session_data));
+        if (Core::IsUninitialized(m_system) && client &&
+            client == Settings::Instance().GetNetPlayClient())
+          client->RequestStopGame();
       });
 #ifdef USE_DISCORD_PRESENCE
   m_netplay_discord = new DiscordHandler(this);
 #endif
 
-  connect(m_netplay_dialog, &NetPlayDialog::Stop, this, &MainWindow::ForceStop);
+  connect(m_netplay_dialog, &NetPlayDialog::QuickPlayStartAborted, this, [this](quint64 attempt) {
+    // Defer destruction until the normal NetPlay callback has returned.
+    QTimer::singleShot(0, this, [this, attempt] {
+      if (m_quickplay_controller)
+        m_quickplay_controller->OnLaunchFailed(attempt, tr("NetPlay game start was aborted."));
+    });
+  });
+  connect(m_netplay_dialog, &NetPlayDialog::Stop, this, [this] {
+    EndQuickPlaySession(true);
+    ForceStop();
+    if (m_quickplay_recovery == QuickPlayRecovery::WaitingForStop &&
+        Core::IsUninitialized(m_system))
+      OnStopComplete();
+  });
   connect(m_netplay_dialog, &NetPlayDialog::rejected, this, &MainWindow::NetPlayQuit);
   connect(m_netplay_setup_dialog, &NetPlaySetupDialog::Join, this, &MainWindow::NetPlayJoin);
   connect(m_netplay_setup_dialog, &NetPlaySetupDialog::Host, this, &MainWindow::NetPlayHost);
@@ -1796,7 +2253,7 @@ void MainWindow::NetPlayInit()
 
 bool MainWindow::NetPlayJoin()
 {
-  if (m_quickplay_host_attempt || m_quickplay_joining)
+  if (m_quickplay_setup || m_quickplay_host_attempt || m_quickplay_joining)
     return false;
   return NetPlayJoinInternal(false);
 }
@@ -1817,6 +2274,8 @@ bool MainWindow::NetPlayJoinInternal(bool force_traversal)
     return false;
   }
 
+  const auto setup =
+      (m_quickplay_joining || m_quickplay_host_attempt) ? m_quickplay_setup : std::nullopt;
   auto server = Settings::Instance().GetNetPlayServer();
 
   // Settings
@@ -1837,24 +2296,40 @@ bool MainWindow::NetPlayJoinInternal(bool force_traversal)
     host_port = Config::Get(Config::NETPLAY_CONNECT_PORT);
   }
 
-  const std::string traversal_host = Config::Get(Config::NETPLAY_TRAVERSAL_SERVER);
-  const u16 traversal_port = Config::Get(Config::NETPLAY_TRAVERSAL_PORT);
-  const std::string nickname = Config::Get(Config::NETPLAY_NICKNAME);
-  const std::string network_mode = Config::Get(Config::NETPLAY_NETWORK_MODE);
+  const std::string traversal_host =
+      (setup ? setup->traversal_host : Config::Get(Config::NETPLAY_TRAVERSAL_SERVER));
+  const u16 traversal_port =
+      (setup ? setup->traversal_port : Config::Get(Config::NETPLAY_TRAVERSAL_PORT));
+  const std::string nickname = (setup ? setup->nickname : Config::Get(Config::NETPLAY_NICKNAME));
+  const std::string network_mode =
+      (setup ? setup->network_mode : Config::Get(Config::NETPLAY_NETWORK_MODE));
   const bool host_input_authority = network_mode == "hostinputauthority" || network_mode == "golf";
 
   if (server)
   {
     server->SetHostInputAuthority(host_input_authority);
-    server->AdjustMinimumPadBufferSize(Config::Get(Config::NETPLAY_MINIMUM_BUFFER_SIZE));
+    server->AdjustMinimumPadBufferSize(
+        (setup ? setup->minimum_buffer : Config::Get(Config::NETPLAY_MINIMUM_BUFFER_SIZE)));
   }
 
+  if (m_quickplay_setup && m_quickplay_retain_window)
+  {
+    const auto attempt = m_quickplay_setup->attempt;
+    m_netplay_dialog->ArmQuickPlayStart(
+        attempt, [this, attempt] { return IsQuickPlayLaunchReady(attempt); });
+  }
   // Create Client
   const bool is_hosting_netplay = server != nullptr;
   Settings::Instance().ResetNetPlayClient(new NetPlay::NetPlayClient(
       host_ip, host_port, m_netplay_dialog, nickname,
       NetPlay::NetTraversalConfig{is_hosting_netplay ? false : is_traversal, traversal_host,
                                   traversal_port}));
+
+  if (m_quickplay_setup)
+  {
+    m_quickplay_setup->client = Settings::Instance().GetNetPlayClient().get();
+    m_quickplay_setup->server = Settings::Instance().GetNetPlayServer().get();
+  }
 
   if (!Settings::Instance().GetNetPlayClient()->IsConnected())
   {
@@ -1876,7 +2351,10 @@ bool MainWindow::JoinQuickPlayHost(const QString& host_code)
       m_netplay_dialog->isVisible())
     return false;
 
+  if (!FindPPlusNetplayLauncher(m_game_list->GetGameListModel()).game)
+    return false;
   m_quickplay_joining = true;
+  m_quickplay_join_attempt = m_quickplay_setup ? m_quickplay_setup->attempt : 0;
   const auto previous_method = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
   const auto previous_code = Config::Get(Config::NETPLAY_HOST_CODE);
   Common::ScopeGuard restore([&] {
@@ -1907,21 +2385,26 @@ QString MainWindow::StartQuickPlayHost(u64 attempt)
 
 void MainWindow::CancelQuickPlayHost(u64 attempt)
 {
-  if (!attempt || m_quickplay_host_attempt != attempt)
+  if (!attempt)
+    return;
+  const bool owns_session =
+      m_quickplay_host_attempt == attempt || m_quickplay_join_attempt == attempt;
+  if (m_quickplay_setup && m_quickplay_setup->attempt == attempt)
+  {
+    m_quickplay_setup.reset();
+    ReleaseQuickPlayWindow();
+  }
+  if (!owns_session)
     return;
   m_quickplay_host_attempt = 0;
-  auto server = Settings::Instance().GetNetPlayServer();
-  if (server && Core::IsUninitialized(m_system) && server->PrepareQuickPlayCancel(attempt))
-  {
-    // Use the normal ownership teardown, without the manual Quit confirmation.
-    m_netplay_dialog->hide();
-    NetPlayQuit();
-  }
+  m_quickplay_join_attempt = 0;
+  m_netplay_dialog->hide();
+  NetPlayQuit();
 }
 
 bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
 {
-  if (m_quickplay_host_attempt || m_quickplay_joining)
+  if (m_quickplay_setup || m_quickplay_host_attempt || m_quickplay_joining)
     return false;
   return NetPlayHostInternal(game, 0);
 }
@@ -1942,18 +2425,22 @@ bool MainWindow::NetPlayHostInternal(const UICommon::GameFile& game, u64 quickpl
     return false;
   }
 
+  const auto setup = quickplay_attempt ? m_quickplay_setup : std::nullopt;
   // Settings
   u16 host_port = Config::Get(Config::NETPLAY_HOST_PORT);
   const std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
   const bool is_traversal = quickplay_attempt != 0 || traversal_choice == "traversal";
-  const bool use_upnp = Config::Get(Config::NETPLAY_USE_UPNP);
+  const bool use_upnp = (setup ? setup->use_upnp : Config::Get(Config::NETPLAY_USE_UPNP));
 
-  const std::string traversal_host = Config::Get(Config::NETPLAY_TRAVERSAL_SERVER);
-  const u16 traversal_port = Config::Get(Config::NETPLAY_TRAVERSAL_PORT);
-  const u16 traversal_port_alt = Config::Get(Config::NETPLAY_TRAVERSAL_PORT_ALT);
+  const std::string traversal_host =
+      (setup ? setup->traversal_host : Config::Get(Config::NETPLAY_TRAVERSAL_SERVER));
+  const u16 traversal_port =
+      (setup ? setup->traversal_port : Config::Get(Config::NETPLAY_TRAVERSAL_PORT));
+  const u16 traversal_port_alt =
+      (setup ? setup->traversal_port_alt : Config::Get(Config::NETPLAY_TRAVERSAL_PORT_ALT));
 
   if (is_traversal)
-    host_port = Config::Get(Config::NETPLAY_LISTEN_PORT);
+    host_port = (setup ? setup->listen_port : Config::Get(Config::NETPLAY_LISTEN_PORT));
 
   // Create Server
   Settings::Instance().ResetNetPlayServer(new NetPlay::NetPlayServer(
@@ -1980,11 +2467,29 @@ bool MainWindow::NetPlayHostInternal(const UICommon::GameFile& game, u64 quickpl
 
 void MainWindow::NetPlayQuit()
 {
-  const auto attempt = std::exchange(m_quickplay_host_attempt, 0);
-  if (attempt && m_quickplay_controller)
-    m_quickplay_controller->OnHostClosed(attempt);
+  if (m_quickplay_session || m_quickplay_recovery != QuickPlayRecovery::None)
+  {
+    EndQuickPlaySession(false);
+    ForceStop();
+    if (Core::IsUninitialized(m_system))
+      OnStopComplete();
+    return;
+  }
+  const auto attempt = m_quickplay_setup ? m_quickplay_setup->attempt : 0;
+  ReleaseQuickPlayWindow();
+  m_quickplay_setup.reset();
+  m_quickplay_join_attempt = 0;
+  m_quickplay_host_attempt = 0;
   Settings::Instance().ResetNetPlayClient();
   Settings::Instance().ResetNetPlayServer();
+  m_netplay_dialog->ResetSession();
+  if (m_quickplay_controller)
+  {
+    if (attempt)
+      m_quickplay_controller->OnHostClosed(attempt);
+    else if (m_quickplay_controller->GetState() == QuickPlayController::State::NetPlayOwned)
+      m_quickplay_controller->Cancel();
+  }
 #ifdef USE_DISCORD_PRESENCE
   Discord::UpdateDiscordPresence();
 #endif

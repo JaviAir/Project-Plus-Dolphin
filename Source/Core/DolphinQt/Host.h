@@ -38,6 +38,8 @@ public:
 signals:
   void RequestTitle(const QString& title);
   void RequestStop();
+  void RequestQuickPlay();
+  void RequestQuickPlayCancel();
   void RequestRenderSize(int w, int h);
   void UpdateDisasmDialog();
   void JitCacheInvalidation();

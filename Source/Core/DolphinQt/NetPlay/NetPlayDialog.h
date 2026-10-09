@@ -3,13 +3,15 @@
 
 #pragma once
 
+#include <atomic>
 #include <functional>
 #include <memory>
+#include <optional>
 #include <string>
 
+#include <QCheckBox>
 #include <QDialog>
 #include <QMenuBar>
-#include <QCheckBox>
 
 #include "Common/Lazy.h"
 #include "Core/NetPlayClient.h"
@@ -46,6 +48,12 @@ public:
 
   void show(std::string nickname, bool use_traversal);
   void reject() override;
+  // GUI-thread Quick Play admission. The ordinary OnStart remains the only host start path.
+  void ArmQuickPlayStart(u64 attempt, std::function<bool()> ready);
+  bool StartQuickPlayGame(u64 attempt);
+  bool IsQuickPlayReady();
+  void ResetSession();
+  void ReleaseQuickPlayStart();
 
   // NetPlayUI methods
   void BootGame(const std::string& filename,
@@ -59,7 +67,7 @@ public:
   void OnMsgChangeGame(const NetPlay::SyncIdentifier& sync_identifier,
                        const std::string& netplay_name) override;
   void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override;
-  void OnMsgStartGame() override;
+  void OnMsgStartGame(u32 game_id) override;
   void OnMsgStopGame() override;
   void OnMsgPowerButton() override;
   void OnPlayerConnect(const std::string& player) override;
@@ -73,7 +81,7 @@ public:
   void OnTraversalError(Common::TraversalClient::FailureReason error) override;
   void OnTraversalStateChanged(Common::TraversalClient::State state) override;
   void OnHostTraversalStateChanged(u64 attempt, Common::TraversalClient::State state,
-                                  const std::string& code) override;
+                                   const std::string& code) override;
   void OnGameStartAborted() override;
   void OnGolferChanged(bool is_golfer, const std::string& golfer_name) override;
   void OnTtlDetermined(u8 ttl) override;
@@ -106,17 +114,19 @@ public:
   void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override;
 
 signals:
+  void QuickPlayStartAborted(quint64 attempt);
   void QuickPlayOpponentConnected(quint64 attempt);
   void HostTraversalChanged(quint64 attempt, QString code, bool failed);
   void Stop();
 
 private:
+  void RefreshGameListSnapshot();
   void CreateChatLayout();
   void CreatePlayersLayout();
   void CreateMainLayout();
   void ConnectWidgets();
   void OnChat();
-  void OnStart();
+  bool OnStart();
   void DisplayMessage(const QString& msg, const std::string& color,
                       int duration = OSD::Duration::NORMAL);
   void ResetExternalIP();
@@ -194,4 +204,14 @@ private:
   bool m_host_input_authority = false;
 
   StartGameCallback m_start_game_callback;
+  using GameListSnapshot = std::vector<std::shared_ptr<const UICommon::GameFile>>;
+  std::atomic<std::shared_ptr<const GameListSnapshot>> m_game_list_snapshot;
+  std::atomic<bool> m_quickplay_setup_active{false};
+  std::atomic<u64> m_session_generation{0};
+  u64 m_quickplay_attempt = 0;
+  std::function<bool()> m_quickplay_ready;
+  bool m_quickplay_start_requested = false;
+  bool m_start_received = false;
+  std::optional<u32> m_started_game;
+  bool m_quickplay_start_aborted = false;
 };

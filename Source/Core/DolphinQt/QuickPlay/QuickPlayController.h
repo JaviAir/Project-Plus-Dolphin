@@ -23,6 +23,9 @@ public:
     Searching,
     MatchedHost,
     MatchedClient,
+    PreparingHandoff,
+    WaitingForCoreStop,
+    ValidatingMatch,
     CreatingHost,
     WaitingForTraversalCode,
     PublishingHostCode,
@@ -30,6 +33,7 @@ public:
     WaitingForHost,
     Connecting,
     NetPlayConnected,
+    NetPlayOwned,
     Error,
   };
   Q_ENUM(State)
@@ -46,17 +50,25 @@ public:
   const QString& GetErrorMessage() const { return m_error_message; }
   bool Start();
   void Cancel();
+  std::uint64_t GetGuestCancelAttempt() const;
+  // Called only by the host owner, after all old-Core stop observers have drained.
+  void OnCoreStopped(std::uint64_t attempt, const QString& error = {});
+  bool OwnsAttempt(std::uint64_t attempt) const { return attempt == m_attempt; }
   void OnHostTraversalChanged(quint64 attempt, const QString& code, bool failed);
   void OnHostOpponentConnected(quint64 attempt);
   void OnHostClosed(std::uint64_t attempt);
+  void OnLaunchOwned(std::uint64_t attempt);
+  void OnLaunchFailed(std::uint64_t attempt, const QString& error);
 
 signals:
+  void PrepareHandoff(quint64 attempt);
   void StateChanged(QuickPlayController::State state);
 
 private:
   void SetState(State state);
   void HandleResult(QuickPlayClient::Result result);
 
+  void ClaimMatch(const QuickPlayClient::Result& result);
   void BeginHost(std::uint64_t attempt);
   void BeginJoin(std::uint64_t attempt);
   void Fail(QString error);
@@ -64,6 +76,7 @@ private:
   StartHost m_start_host;
   CancelHost m_cancel_host;
   JoinHost m_join_host;
+  bool m_is_host = false;
   bool m_joining = false;
   QString m_host_code;
   QString m_match_id;

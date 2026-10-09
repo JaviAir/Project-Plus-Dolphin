@@ -45,6 +45,9 @@ enum class HostMessageID
   // Begin at 10 in case there is already messages with wParam = 0, 1, 2 and so on
   WMUserStop = 10,
   WMUserJobDispatch,
+  // Delivered only by a validated Project+ Online host job, on the host thread.
+  WMUserStartQuickPlay,
+  WMUserCancelQuickPlay,
 };
 
 std::vector<std::string> Host_GetPreferredLocales();

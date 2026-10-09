@@ -212,6 +212,10 @@ add_library(core
   HW/EXI/EXI_DeviceEthernet.h
   HW/EXI/EXI_DeviceGecko.cpp
   HW/EXI/EXI_DeviceGecko.h
+  HW/EXI/EXI_DeviceProjectPlusOnline.cpp
+  HW/EXI/EXI_DeviceProjectPlusOnline.h
+  ProjectPlusOnline/Protocol.h
+  ProjectPlusOnline/Status.h
   HW/EXI/EXI_DeviceIPL.cpp
   HW/EXI/EXI_DeviceIPL.h
   HW/EXI/EXI_DeviceMemoryCard.cpp
@@ -685,12 +689,18 @@ PUBLIC
   videosoftware
 
 PRIVATE
+  # NetPlayServer uses the index service, including in non-Qt consumers.
+  uicommon
   FatFs
   fmt::fmt
   LZO::LZO
   LZ4::LZ4
   ZLIB::ZLIB
 )
+
+# The overlay can pull NetPlayServer from core after uicommon was scanned.
+# Rescan the static-library component to resolve its NetPlayIndex dependency.
+set_property(TARGET core PROPERTY LINK_INTERFACE_MULTIPLICITY 3)
 
 if(LIBUDEV_FOUND)
   target_include_directories(core PRIVATE ${LIBUDEV_INCLUDE_DIR})

@@ -18,6 +18,12 @@
 #include "Core/Boot/Boot.h"
 #include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 
+namespace NetPlay
+{
+class NetPlayClient;
+class NetPlayServer;
+}  // namespace NetPlay
+
 class QMenu;
 class QStackedWidget;
 class QString;
@@ -177,7 +183,7 @@ private:
   void ShowGraphicsWindow();
   void ShowFreeLookWindow();
   void ShowAboutDialog();
-  #ifdef SHOW_UPDATER
+#ifdef SHOW_UPDATER
   void ShowUpdateDialog();
   void CheckForUpdatesAuto();
 #endif  // SHOW_UPDATER
@@ -185,6 +191,12 @@ private:
   void ShowNetPlaySetupDialog();
   void ShowNetPlayBrowser();
   void StartQuickPlay();
+  void PublishQuickPlayStatus();
+  void PrepareQuickPlayHandoff(u64 attempt);
+  void AdvanceQuickPlayPresentation(u64 attempt);
+  void ReleaseQuickPlayWindow();
+  void EndQuickPlaySession(bool restart);
+  void FinishQuickPlayRecovery();
   void ShowQuickPlaySettings();
   void ShowFIFOPlayer();
   void ShowSkylanderPortal();
@@ -286,6 +298,51 @@ private:
   NetPlayDialog* m_netplay_dialog;
   DiscordHandler* m_netplay_discord;
   NetPlaySetupDialog* m_netplay_setup_dialog;
+  // Host-owned setup values, captured before BootManager restores per-game config.
+  struct QuickPlaySetup
+  {
+    u64 attempt;
+    std::string traversal_host;
+    u16 traversal_port;
+    u16 traversal_port_alt;
+    u16 listen_port;
+    std::string nickname;
+    std::string network_mode;
+    u32 minimum_buffer;
+    bool use_upnp;
+    RenderWidget* window = nullptr;
+    u64 native_window = 0;
+    bool start_requested = false;
+    const NetPlay::NetPlayClient* client = nullptr;
+    const NetPlay::NetPlayServer* server = nullptr;
+  };
+  bool IsQuickPlayLaunchReady(u64 attempt);
+  void CheckQuickPlayLaunch(u64 attempt);
+  std::optional<QuickPlaySetup> m_quickplay_setup;
+  enum class QuickPlayPresentation
+  {
+    None,
+    Matched,
+    Connecting
+  };
+  QuickPlayPresentation m_quickplay_presentation = QuickPlayPresentation::None;
+  u64 m_quickplay_stop_attempt = 0;
+  u64 m_quickplay_join_attempt = 0;
+  bool m_quickplay_retain_window = false;
+  // Only an in-game Quick Play launch owns automatic local frontend recovery.
+  bool m_quickplay_session = false;
+  enum class QuickPlayRecovery
+  {
+    None,
+    WaitingForStop,
+    Queued,
+    Releasing,
+    Booting
+  };
+  QuickPlayRecovery m_quickplay_recovery = QuickPlayRecovery::None;
+  bool m_quickplay_recovery_restart = false;
+  std::weak_ptr<NetPlay::NetPlayClient> m_quickplay_retiring_client;
+  std::weak_ptr<NetPlay::NetPlayServer> m_quickplay_retiring_server;
   QuickPlayController* m_quickplay_controller = nullptr;
   QuickPlayDialog* m_quickplay_dialog = nullptr;
   QuickPlaySettingsDialog* m_quickplay_settings_dialog = nullptr;
