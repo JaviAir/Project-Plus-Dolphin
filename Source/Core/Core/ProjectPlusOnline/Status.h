@@ -66,6 +66,10 @@ private:
   std::atomic<std::uint64_t> m_value{Pack(GuestStatus::Unavailable, 1, Reason::Lifecycle)};
 };
 inline StatusMailbox guest_status;
+// Host-only chord adapter for a configured persistent CSS profile. Epochs invalidate
+// queued requests on restore/retirement; no state is serialized into guest RAM.
+inline std::atomic<bool> persistent_local_input{false};
+inline std::atomic<std::uint64_t> persistent_input_epoch{1};
 // Host-only attempt identity. Never serialized or exposed to the guest. The GUI
 // clears this before publishing a non-cancellable state and publishes a new
 // identity only after its status. Readers bracket status with identity loads.

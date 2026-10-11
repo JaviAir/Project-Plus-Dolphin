@@ -16,6 +16,7 @@
 #include <cstddef>
 #include <cstring>
 #include <deque>
+#include <functional>
 #include <list>
 #include <map>
 #include <optional>
@@ -51,6 +52,9 @@ private:
   Mode m_mode;
 
 public:
+  // Temporary Phase 9.1 research observer; does not change serialized bytes.
+  std::function<void(const std::string&, u8*)> research_marker;
+
   PointerWrap(u8** ptr, size_t size, Mode mode)
       : m_ptr_current(ptr), m_ptr_end(*ptr + size), m_mode(mode)
   {
@@ -311,6 +315,9 @@ public:
   {
     u32 cookie = arbitraryNumber;
     Do(cookie);
+
+    if (IsWriteMode() && research_marker)
+      research_marker(prevName, *m_ptr_current);
 
     if (IsReadMode() && cookie != arbitraryNumber)
     {

@@ -60,6 +60,7 @@ public:
   virtual void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) = 0;
   virtual void OnMsgStartGame(u32 game_id) = 0;
   virtual void OnMsgStopGame() = 0;
+  virtual void OnPersistentBarrier(u32 game, bool release) {}
   virtual void OnMsgPowerButton() = 0;
   virtual void OnPlayerConnect(const std::string& player) = 0;
   virtual void OnPlayerDisconnect(const std::string& player) = 0;
@@ -122,7 +123,7 @@ public:
   void SendAsync(sf::Packet&& packet, u8 channel_id = DEFAULT_CHANNEL);
 
   NetPlayClient(const std::string& address, const u16 port, NetPlayUI* netplay_ui, std::string name,
-                const NetTraversalConfig& traversal_config);
+                const NetTraversalConfig& traversal_config, bool persistent_session = false);
   ~NetPlayClient() override;
 
   std::vector<const Player*> GetPlayers();
@@ -147,6 +148,15 @@ public:
   // Called from the GUI thread.
   bool IsConnected() const { return m_is_connected && !m_connection_lost; }
   bool StartGame(const std::string& path);
+  // Disposable CSS-only experiment; never used by the production frontend.
+  bool ResearchAttachRunningCore(bool validate_only = false);
+  bool IsPersistentSession() const { return m_persistent_session; }
+  bool PreparePersistentSession(u32 game, const std::string& identity);
+  bool AttachPersistentSession(u32 game);
+  bool ReleasePersistentSession(u32 game);
+  // Wake every input wait before pausing, then disable the runtime under the CPU guard.
+  void DetachPersistentSession();
+  std::string ResearchSessionState();
   void InvokeStop();
   bool StopGame();
   void Stop();
@@ -303,6 +313,12 @@ private:
     Failure
   };
 
+  bool StartGameImpl(const std::string& path, bool research_attach);
+  bool ValidatePersistentAttach();
+  const bool m_persistent_session;
+  u32 m_persistent_prepared_game = 0;
+  std::atomic<bool> m_persistent_released{false};
+  Common::Event m_persistent_release_event;
   void SendStartGamePacket();
   void SendStopGamePacket();
 

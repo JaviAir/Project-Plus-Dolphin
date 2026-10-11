@@ -8,6 +8,7 @@
 
 #include <gtest/gtest.h>
 
+#include "Core/ProjectPlusOnline/Chord.h"
 #include "Core/ProjectPlusOnline/Protocol.h"
 #include "Core/ProjectPlusOnline/Status.h"
 
@@ -234,4 +235,36 @@ TEST(ProjectPlusOnlineCancel, PublicationRacesAndNonCancellableOwnershipFailClos
   EXPECT_EQ(observation.Target(9), 0u);
   observation.Observe(0, {GuestStatus::Searching, 3, Reason::None}, 7);
   EXPECT_EQ(observation.Target(7), 0u);
+}
+
+TEST(ProjectPlusOnlineProtocol, PersistentChordRequiresReleaseAndEligibleLocalCSS)
+{
+  ProjectPlusOnline::LocalChord chord;
+  using Action = ProjectPlusOnline::LocalChord::Action;
+  EXPECT_EQ(chord.Poll(true, 0x68, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x68, 0), Action::Search);
+  EXPECT_EQ(chord.Poll(true, 0x68, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x60, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x68, 0), Action::None);
+  EXPECT_EQ(chord.Poll(false, 0, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x68, 0), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0, 7), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x68, 7), Action::None);
+}
+
+TEST(ProjectPlusOnlineProtocol, PersistentCancelOwnsPressThroughRelease)
+{
+  ProjectPlusOnline::LocalChord chord;
+  using Action = ProjectPlusOnline::LocalChord::Action;
+  EXPECT_EQ(chord.Poll(true, 0x200, 7), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0, 7), Action::None);
+  EXPECT_EQ(chord.Poll(true, 0x200, 7), Action::Cancel);
+  EXPECT_TRUE(chord.ConsumesCancel());
+  EXPECT_EQ(chord.Poll(true, 0x200, 0), Action::None);
+  EXPECT_TRUE(chord.ConsumesCancel());
+  EXPECT_EQ(chord.Poll(true, 0, 0), Action::None);
+  EXPECT_FALSE(chord.ConsumesCancel());
+  EXPECT_EQ(chord.Poll(true, 0x200, 0), Action::None);
+  EXPECT_FALSE(chord.ConsumesCancel());
 }

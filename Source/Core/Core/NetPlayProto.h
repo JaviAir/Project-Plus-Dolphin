@@ -113,6 +113,7 @@ struct NetSettings
   Sram sram;
 
   // These aren't sent over the network directly
+  bool persistent_session = false;
   bool is_hosting = false;
   std::array<std::string, 4> gba_rom_paths{};
 };
@@ -174,6 +175,10 @@ enum class MessageID : u8
   ClientCapabilities = 0xA5,
   HostInputAuthority = 0xA6,
   PowerButton = 0xA7,
+  PersistentReady = 0xA8,
+  PersistentAttach = 0xA9,
+  PersistentAttached = 0xAA,
+  PersistentRelease = 0xAB,
 
   TimeBase = 0xB0,
   DesyncDetected = 0xB1,

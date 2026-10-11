@@ -282,6 +282,10 @@ void NetPlayDialog::CreateMainLayout()
   m_main_layout->addLayout(options_widget, 2, 0, 1, -1, Qt::AlignRight);
   m_main_layout->setRowStretch(1, 1000);
 
+  m_diagnostic_error = new QTextEdit;
+  m_diagnostic_error->setReadOnly(true);
+  m_diagnostic_error->setVisible(false);
+  m_main_layout->addWidget(m_diagnostic_error, m_main_layout->rowCount(), 0, 1, -1);
   setLayout(m_main_layout);
 }
 
@@ -438,13 +442,14 @@ void NetPlayDialog::ConnectWidgets()
       g_netplay_chat_ui.store(nullptr);
       g_netplay_golf_ui.reset();
     }
-    if (isVisible())
+    if (m_presentation.Initialized())
     {
       GameStatusChanged(state != Core::State::Uninitialized);
       if ((state == Core::State::Uninitialized || state == Core::State::Stopping) &&
           !m_got_stop_request)
       {
-        Settings::Instance().GetNetPlayClient()->RequestStopGame();
+        if (const auto client = Settings::Instance().GetNetPlayClient())
+          client->RequestStopGame();
       }
       if (state == Core::State::Uninitialized)
         m_start_received = false;
@@ -536,6 +541,7 @@ void NetPlayDialog::ArmQuickPlayStart(u64 attempt, std::function<bool()> ready)
   m_quickplay_start_requested = false;
   m_start_received = false;
   m_quickplay_start_aborted = false;
+  m_start_button->setEnabled(false);
 }
 
 void NetPlayDialog::ReleaseQuickPlayStart()
@@ -550,6 +556,7 @@ void NetPlayDialog::ResetSession()
   g_netplay_chat_ui.store(nullptr);
   g_netplay_golf_ui.reset();
   ++m_session_generation;
+  m_presentation.Reset();
   m_got_stop_request = true;
   m_started_game.reset();
   m_quickplay_setup_active = false;
@@ -610,6 +617,11 @@ bool NetPlayDialog::OnStart()
   }
   if (!Settings::Instance().GetNetPlayClient()->DoAllPlayersHaveGame())
   {
+    if (m_presentation.InGame())
+    {
+      ReportError(tr("The Quick Play peer does not have the selected game."));
+      return false;
+    }
     if (ModalMessageBox::question(
             this, tr("Warning"),
             tr("Not all players have the game. Do you really want to start?")) == QMessageBox::No)
@@ -618,8 +630,7 @@ bool NetPlayDialog::OnStart()
 
   if (m_strict_settings_sync_action->isChecked() && Config::Get(Config::GFX_EFB_SCALE) == 0)
   {
-    ModalMessageBox::critical(
-        this, tr("Error"),
+    ReportError(
         tr("Auto internal resolution is not allowed in strict sync mode, as it depends on window "
            "size.\n\nPlease select a specific internal resolution."));
     return false;
@@ -628,7 +639,7 @@ bool NetPlayDialog::OnStart()
   const auto game = FindGameFile(m_current_game_identifier);
   if (!game)
   {
-    PanicAlertFmtT("Selected game doesn't exist in game list!");
+    ReportError(tr("Selected game doesn't exist in game list!"));
     return false;
   }
 
@@ -653,8 +664,65 @@ void NetPlayDialog::reject()
   }
 }
 
-void NetPlayDialog::show(std::string nickname, bool use_traversal)
+void NetPlayDialog::BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt)
 {
+  ResetSession();
+  m_presentation.Begin(entry, persistent, attempt);
+  m_failure.Begin(m_session_generation.load());
+}
+
+void NetPlayDialog::ShowAutomatic()
+{
+  if (m_presentation.AutomaticShow())
+    QDialog::show();
+  else
+    hide();
+}
+
+void NetPlayDialog::ShowDiagnostics()
+{
+  // Reveal existing objects only. No room initialization, readiness or attempt changes.
+  QDialog::show();
+  raise();
+  activateWindow();
+}
+
+void NetPlayDialog::SetDiagnosticError(const QString& error)
+{
+  m_presentation.SetError(error.toStdString());
+  m_diagnostic_error->setPlainText(QString::fromStdString(m_presentation.DiagnosticError()));
+  m_diagnostic_error->setVisible(!error.isEmpty());
+}
+
+QString NetPlayDialog::SessionError() const
+{
+  return QString::fromStdString(m_failure.Read(m_session_generation.load()));
+}
+
+void NetPlayDialog::ReportError(const QString& error)
+{
+  const auto generation = m_session_generation.load();
+  const auto captured = m_failure.Capture(generation, error.toStdString());
+  if (captured.empty())
+    return; // No live session owns this late callback.
+  QMetaObject::invokeMethod(this, [this, error, captured, generation] {
+    if (generation != m_session_generation)
+      return;
+    if (m_presentation.InGame() && !m_presentation.DiagnosticError().empty())
+      return; // The first real failure must survive secondary cleanup/timeout causes.
+    const auto cause = m_presentation.InGame() ? QString::fromStdString(captured) : error;
+    SetDiagnosticError(cause);
+    if (m_presentation.InGame())
+      emit InGameError(cause);
+    else
+      ModalMessageBox::critical(this, tr("NetPlay Error"), cause);
+  }, Qt::AutoConnection);
+}
+
+void NetPlayDialog::InitializeRoom(std::string nickname, bool use_traversal)
+{
+  if (!m_presentation.Initialize())
+    return;
   m_nickname = std::move(nickname);
   m_use_traversal = use_traversal;
   m_minimum_buffer_size = 0;
@@ -699,7 +767,6 @@ void NetPlayDialog::show(std::string nickname, bool use_traversal)
 
   SetOptionsEnabled(true);
 
-  QDialog::show();
   UpdateGUI();
 }
 
@@ -774,7 +841,13 @@ void NetPlayDialog::UpdateGUI()
   const auto players = client->GetLobbyState().players;
 
   if (static_cast<int>(players.size()) != m_player_count && m_player_count != 0)
-    QApplication::alert(this);
+    QMetaObject::invokeMethod(
+        this,
+        [this, generation = m_session_generation.load()] {
+          if (generation == m_session_generation && !m_presentation.InGame())
+            QApplication::alert(this);
+        },
+        Qt::AutoConnection);
 
   m_player_count = static_cast<int>(players.size());
 
@@ -985,7 +1058,13 @@ void NetPlayDialog::DisplayMessage(const QString& msg, const std::string& color,
 void NetPlayDialog::AppendChat(const std::string& msg)
 {
   DisplayMessage(QString::fromStdString(msg), "");
-  QApplication::alert(this);
+  QMetaObject::invokeMethod(
+      this,
+      [this, generation = m_session_generation.load()] {
+        if (generation == m_session_generation && !m_presentation.InGame())
+          QApplication::alert(this);
+      },
+      Qt::AutoConnection);
 }
 
 void NetPlayDialog::OnMsgChangeGame(const NetPlay::SyncIdentifier& sync_identifier,
@@ -1030,7 +1109,7 @@ void NetPlayDialog::SetOptionsEnabled(bool enabled)
 {
   if (Settings::Instance().GetNetPlayServer())
   {
-    m_start_button->setEnabled(enabled);
+    m_start_button->setEnabled(enabled && !m_quickplay_attempt);
     m_game_button->setEnabled(enabled);
     m_savedata_none_action->setEnabled(enabled);
     m_savedata_load_only_action->setEnabled(enabled);
@@ -1066,6 +1145,12 @@ void NetPlayDialog::OnMsgStartGame(u32 game_id)
     }
     m_start_received = true;
     m_started_game = game_id;
+    m_got_stop_request = false;
+    if (client->IsPersistentSession())
+    {
+      emit PersistentStart(game_id);
+      return;
+    }
     DisplayMessage(tr("Started game"), "green");
     g_netplay_chat_ui.store(std::make_shared<NetPlayChatUI>(
         [dialog = QPointer<NetPlayDialog>(this), generation, game_id](const std::string& message) {
@@ -1086,8 +1171,19 @@ void NetPlayDialog::OnMsgStartGame(u32 game_id)
     if (const auto game = FindGameFile(m_current_game_identifier))
       client->StartGame(game->GetFilePath());
     else
-      PanicAlertFmtT("Selected game doesn't exist in game list!");
+      ReportError(tr("Selected game doesn't exist in game list!"));
     UpdateDiscordPresence();
+  });
+}
+
+void NetPlayDialog::OnPersistentBarrier(u32 game, bool release)
+{
+  QueueOnObject(this, [this, game, release, generation = m_session_generation.load()] {
+    const auto client = Settings::Instance().GetNetPlayClient();
+    if (generation == m_session_generation && client && client->IsConnected() &&
+        client->IsPersistentSession() && m_started_game == game &&
+        client->GetLobbyState().current_game == game && !m_got_stop_request)
+      emit PersistentBarrier(game, release);
   });
 }
 
@@ -1117,7 +1213,9 @@ void NetPlayDialog::OnPlayerConnect(const std::string& player)
 void NetPlayDialog::OnPlayerDisconnect(const std::string& player)
 {
   QueueOnObject(this, [this, generation = m_session_generation.load()] {
-    if (generation == m_session_generation && m_quickplay_attempt)
+    if (generation == m_session_generation && m_presentation.InGame())
+      ReportError(tr("The Quick Play peer disconnected."));
+    else if (generation == m_session_generation && m_quickplay_attempt)
     {
       m_quickplay_start_aborted = true;
       emit QuickPlayStartAborted(m_quickplay_attempt);
@@ -1195,8 +1293,15 @@ void NetPlayDialog::OnDesync(u32 frame, const std::string& player)
 
 void NetPlayDialog::OnConnectionLost()
 {
+  if (m_failure.Capture(m_session_generation.load(),
+                        tr("Lost connection to NetPlay server.").toStdString()).empty())
+    return;
   QueueOnObject(this, [this, generation = m_session_generation.load()] {
-    if (generation == m_session_generation && m_quickplay_attempt)
+    if (generation != m_session_generation)
+      return;
+    if (m_presentation.InGame())
+      ReportError(tr("Lost connection to NetPlay server."));
+    else if (m_quickplay_attempt)
     {
       m_quickplay_start_aborted = true;
       emit QuickPlayStartAborted(m_quickplay_attempt);
@@ -1207,37 +1312,48 @@ void NetPlayDialog::OnConnectionLost()
 
 void NetPlayDialog::OnConnectionError(const std::string& message)
 {
-  QueueOnObject(this, [this, message, generation = m_session_generation.load()] {
-    if (generation != m_session_generation)
-      return;
-    ModalMessageBox::critical(this, tr("Error"),
-                              tr("Failed to connect to server: %1").arg(tr(message.c_str())));
-  });
+  // AutoConnection executes constructor errors immediately on GUI, before cleanup can fence them.
+  ReportError(tr("Failed to connect to server: %1").arg(tr(message.c_str())));
 }
 
 void NetPlayDialog::OnTraversalError(Common::TraversalClient::FailureReason error)
 {
-  QueueOnObject(this, [this, error, generation = m_session_generation.load()] {
+  QString cause;
+  switch (error)
+  {
+  case Common::TraversalClient::FailureReason::BadHost:
+    cause = tr("Couldn't look up central server");
+    break;
+  case Common::TraversalClient::FailureReason::VersionTooOld:
+    cause = tr("Dolphin is too old for traversal server");
+    break;
+  case Common::TraversalClient::FailureReason::ServerForgotAboutUs:
+    cause = tr("The traversal server lost this room");
+    break;
+  case Common::TraversalClient::FailureReason::SocketSendError:
+    cause = tr("The traversal socket could not send data");
+    break;
+  case Common::TraversalClient::FailureReason::ResendTimeout:
+    cause = tr("The traversal connection timed out");
+    break;
+  }
+  const auto generation = m_session_generation.load();
+  if (m_failure.Capture(generation, cause.toStdString()).empty())
+    return;
+  QMetaObject::invokeMethod(this, [this, error, cause, generation] {
     if (generation != m_session_generation)
       return;
-    switch (error)
+    if (m_presentation.InGame())
+      ReportError(cause);
+    else if (error == Common::TraversalClient::FailureReason::BadHost ||
+             error == Common::TraversalClient::FailureReason::VersionTooOld)
     {
-    case Common::TraversalClient::FailureReason::BadHost:
-      ModalMessageBox::critical(this, tr("Traversal Error"), tr("Couldn't look up central server"));
+      ReportError(cause);
       QDialog::reject();
-      break;
-    case Common::TraversalClient::FailureReason::VersionTooOld:
-      ModalMessageBox::critical(this, tr("Traversal Error"),
-                                tr("Dolphin is too old for traversal server"));
-      QDialog::reject();
-      break;
-    case Common::TraversalClient::FailureReason::ServerForgotAboutUs:
-    case Common::TraversalClient::FailureReason::SocketSendError:
-    case Common::TraversalClient::FailureReason::ResendTimeout:
-      UpdateGUI();
-      break;
     }
-  });
+    else
+      UpdateGUI();
+  }, Qt::AutoConnection);
 }
 
 void NetPlayDialog::OnHostTraversalStateChanged(u64 attempt, Common::TraversalClient::State state,
@@ -1246,9 +1362,12 @@ void NetPlayDialog::OnHostTraversalStateChanged(u64 attempt, Common::TraversalCl
   // Copy on the traversal callback thread, never read the global client from a queued lambda.
   const auto copied_code = QString::fromStdString(code);
   const bool failed = state == Common::TraversalClient::State::Failure;
-  QueueOnObject(this, [this, attempt, copied_code, failed] {
-    emit HostTraversalChanged(attempt, copied_code, failed);
-  });
+  QueueOnObject(this,
+                [this, attempt, copied_code, failed, generation = m_session_generation.load()] {
+                  if (generation != m_session_generation)
+                    return;
+                  emit HostTraversalChanged(attempt, copied_code, failed);
+                });
 }
 
 void NetPlayDialog::OnTraversalStateChanged(Common::TraversalClient::State state)

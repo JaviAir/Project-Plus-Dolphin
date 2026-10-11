@@ -2,11 +2,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/NetPlayClient.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
 
 #include <algorithm>
 #include <array>
 #include <cstddef>
 #include <cstring>
+#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -42,6 +44,8 @@
 #include "Core/Config/SessionSettings.h"
 #include "Core/Config/WiimoteSettings.h"
 #include "Core/ConfigManager.h"
+#include "Core/ConfigLoaders/NetPlayConfigLoader.h"
+#include "Core/PowerPC/PowerPC.h"
 #include "Core/Core.h"
 #include "Core/GeckoCode.h"
 #include "Core/HW/EXI/EXI.h"
@@ -125,8 +129,8 @@ NetPlayClient::~NetPlayClient()
 
 // called from ---GUI--- thread
 NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlayUI* netplay_ui,
-                             std::string name, const NetTraversalConfig& traversal_config)
-    : m_dialog(netplay_ui), m_player_name(std::move(name))
+                             std::string name, const NetTraversalConfig& traversal_config, bool persistent_session)
+    : m_dialog(netplay_ui), m_persistent_session(persistent_session), m_player_name(std::move(name))
 {
   ClearBuffers();
 
@@ -186,6 +190,7 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
     if (!Common::EnsureTraversalClient(traversal_config.traversal_host,
                                        traversal_config.traversal_port))
     {
+      m_dialog->OnConnectionError(_trans("Could not initialize traversal client."));
       return;
     }
     m_client = Common::g_MainNetHost.get();
@@ -261,7 +266,7 @@ bool NetPlayClient::Connect()
 
   // send connect message
   sf::Packet packet;
-  packet << Common::GetScmRevGitStr();
+  packet << Common::GetScmRevGitStr() + "-persistent1";
   packet << Common::GetNetplayDolphinVer();
   packet << m_player_name;
   Send(packet);
@@ -282,6 +287,7 @@ bool NetPlayClient::Connect()
   }
   else
   {
+    m_dialog->OnConnectionError(_trans("The NetPlay handshake timed out or failed."));
     return false;
   }
 
@@ -479,6 +485,16 @@ void NetPlayClient::OnData(sf::Packet& packet)
   case MessageID::DisableGame:
     OnStopGame(packet);
     break;
+
+  case MessageID::PersistentAttach:
+  case MessageID::PersistentRelease:
+  {
+    u32 game;
+    packet >> game;
+    if (packet && m_persistent_session && game == m_current_game)
+      m_dialog->OnPersistentBarrier(game, mid == MessageID::PersistentRelease);
+    break;
+  }
 
   case MessageID::PowerButton:
     OnPowerButton();
@@ -750,6 +766,9 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
     if (static_cast<size_t>(map) < m_pad_buffer.size())
     {
       m_pad_buffer.at(map).Push(pad);
+      if (std::getenv("PPLUS_PHASE93_ATTACH"))
+        std::fprintf(stderr, "PHASE93 ENet receive: port=%d x=%u y=%u buttons=%u\n",
+                     map, pad.stickX, pad.stickY, pad.button);
       m_gc_pad_event.Set();
     }
   }
@@ -922,6 +941,7 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
 
     INFO_LOG_FMT(NETPLAY, "Start of game {}", m_selected_game.game_id);
 
+    ProjectPlusOnline::presentation.Invalidate();
     packet >> m_current_game;
     packet >> m_net_settings.cpu_thread;
     packet >> m_net_settings.cpu_core;
@@ -964,6 +984,7 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     packet >> m_net_settings.divide_by_zero_exceptions;
     packet >> m_net_settings.fprf;
     packet >> m_net_settings.accurate_nans;
+    packet >> m_net_settings.accurate_fmadds;
     packet >> m_net_settings.disable_icache;
     packet >> m_net_settings.sync_on_skip_idle;
     packet >> m_net_settings.sync_gpu;
@@ -1011,6 +1032,7 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     packet >> m_net_settings.golf_mode;
     packet >> m_net_settings.use_fma;
     packet >> m_net_settings.hide_remote_gbas;
+    packet >> m_net_settings.persistent_session;
 
     for (size_t i = 0; i < sizeof(m_net_settings.sram); ++i)
       packet >> m_net_settings.sram[i];
@@ -1018,6 +1040,13 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     m_net_settings.is_hosting = m_local_player->IsHost();
   }
 
+  if (!packet || m_net_settings.persistent_session != m_persistent_session)
+  {
+    ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: incompatible session ownership");
+    RequestStopGame();
+    m_dialog->OnGameStartAborted();
+    return;
+  }
   m_dialog->OnMsgStartGame(m_current_game);
 }
 
@@ -1625,6 +1654,7 @@ u32 NetPlayClient::GetPlayersMaxPing() const
 
 void NetPlayClient::Disconnect()
 {
+  ProjectPlusOnline::presentation.Invalidate();
   m_connection_lost = true;
   ENetEvent netEvent;
   m_connecting = false;
@@ -1718,6 +1748,7 @@ void NetPlayClient::ThreadFunc()
         enet_packet_destroy(netEvent.packet);
         break;
       case ENET_EVENT_TYPE_DISCONNECT:
+        ProjectPlusOnline::presentation.Invalidate();
         m_connection_lost = true;
         INFO_LOG_FMT(NETPLAY, "enet_host_service: disconnect event");
 
@@ -1845,6 +1876,108 @@ void NetPlayClient::SendStopGamePacket()
 // called from ---GUI--- thread
 bool NetPlayClient::StartGame(const std::string& path)
 {
+  return StartGameImpl(path, false);
+}
+
+bool NetPlayClient::ValidatePersistentAttach()
+{
+  std::lock_guard game_lock(m_crit.game);
+  auto& system = Core::System::GetInstance();
+  if (!IsConnected() ||
+      Core::GetState(system) != Core::State::Paused || system.IsDualCoreMode() ||
+      system.GetMovie().IsMovieActive() ||
+      m_current_game == 0 || m_pad_map != PadMappingArray{1, 2, 0, 0} ||
+      m_wiimote_map != PadMappingArray{} || m_host_input_authority ||
+      m_net_settings.savedata_load || m_net_settings.sync_codes ||
+      m_is_running.IsSet() || m_timebase_frame != 0 ||
+      std::ranges::any_of(m_pad_buffer, [](const auto& queue) { return queue.Size() != 0; }) ||
+      std::ranges::any_of(m_wiimote_buffer, [](const auto& queue) { return queue.Size() != 0; }) ||
+      std::ranges::any_of(m_gba_config, [](const auto& gba) { return gba.enabled; }))
+    return false;
+  // Retain live device instances; a mapping must request their existing types.
+  auto& si = system.GetSerialInterface();
+  for (int port = 0; port < 4; ++port)
+    if (si.GetDeviceType(port) != (port < 2 ? SerialInterface::SIDEVICE_GC_CONTROLLER :
+                                           SerialInterface::SIDEVICE_NONE))
+      return false;
+  if (!ConfigLoaders::ValidateRunningNetPlayConfig(m_net_settings))
+    return false;
+  return true;
+}
+
+bool NetPlayClient::ResearchAttachRunningCore(bool validate_only)
+{
+  if (!std::getenv("PPLUS_PHASE93_ATTACH") ||
+      Core::System::GetInstance().GetPPCState().pc != 0x806876d4 || !ValidatePersistentAttach())
+    return false;
+  if (validate_only)
+    return true;
+  Config::AddLayer(ConfigLoaders::GenerateNetPlayConfigLoader(m_net_settings));
+  return StartGameImpl({}, true);
+}
+
+bool NetPlayClient::PreparePersistentSession(u32 game, const std::string& identity)
+{
+  if (!m_persistent_session || game == 0 || game != m_current_game ||
+      m_persistent_prepared_game || identity.size() != 64 || !ValidatePersistentAttach())
+    return false;
+  m_persistent_prepared_game = game;
+  m_persistent_released = false;
+  m_persistent_release_event.Reset();
+  sf::Packet packet;
+  packet << MessageID::PersistentReady << game << identity;
+  SendAsync(std::move(packet));
+  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: ready game {} player {}", game, m_local_player->pid);
+  return true;
+}
+
+bool NetPlayClient::AttachPersistentSession(u32 game)
+{
+  if (!m_persistent_session || game != m_current_game || game != m_persistent_prepared_game ||
+      !ValidatePersistentAttach())
+    return false;
+  Config::AddLayer(ConfigLoaders::GenerateNetPlayConfigLoader(m_net_settings));
+  if (!StartGameImpl({}, true))
+    return false;
+  sf::Packet packet;
+  packet << MessageID::PersistentAttached << game;
+  SendAsync(std::move(packet));
+  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: attached paused game {} player {}", game,
+               m_local_player->pid);
+  return true;
+}
+
+bool NetPlayClient::ReleasePersistentSession(u32 game)
+{
+  if (!m_persistent_session || game != m_current_game || game != m_persistent_prepared_game ||
+      !m_is_running.IsSet() || m_persistent_released.exchange(true))
+    return false;
+  m_persistent_release_event.Set();
+  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: input released game {} player {}", game,
+               m_local_player->pid);
+  return true;
+}
+
+void NetPlayClient::DetachPersistentSession()
+{
+  InvokeStop();
+  NetPlay_Disable();
+  ClearBuffers();
+  m_persistent_prepared_game = 0;
+  m_persistent_released = false;
+}
+
+std::string NetPlayClient::ResearchSessionState()
+{
+  const auto lobby = GetLobbyState();
+  return fmt::format("game={} local={} running={} minimum={} timebase_frame={} queues={},{},{},{} buffers={},{} maps={},{},{},{} accurate_fmadds={} runtime={}\n",
+      lobby.current_game, lobby.local_player, lobby.running, lobby.minimum_buffer, m_timebase_frame,
+      m_pad_buffer[0].Size(), m_pad_buffer[1].Size(), m_pad_buffer[2].Size(), m_pad_buffer[3].Size(),
+      BufferSizeForPort(0), BufferSizeForPort(1), lobby.pads[0], lobby.pads[1], lobby.pads[2], lobby.pads[3], m_net_settings.accurate_fmadds, IsNetPlayRunning());
+}
+
+bool NetPlayClient::StartGameImpl(const std::string& path, bool research_attach)
+{
   std::lock_guard lkg(m_crit.game);
   SendStartGamePacket();
 
@@ -1864,6 +1997,15 @@ bool NetPlayClient::StartGame(const std::string& path)
   ClearBuffers();
 
   m_first_pad_status_received.fill(false);
+
+  if (research_attach)
+  {
+    // Existing startup has initialized the epoch/FIFOs; install runtime determinism,
+    // keeping Core ticks, Movie counters, SRAM and all live devices continuous.
+    UpdateDevices();
+    Core::UpdateWantDeterminism(Core::System::GetInstance());
+    return true;
+  }
 
   if (m_dialog->IsRecording())
   {
@@ -1985,6 +2127,10 @@ bool NetPlayClient::ChangeGame(const std::string&)
 // called from ---NETPLAY--- thread
 void NetPlayClient::UpdateDevices()
 {
+  // A persistent lobby does not own live SI devices yet. In particular the
+  // one-player host lobby must not schedule removal of the fixture's P2 device.
+  if (m_persistent_session && !m_is_running.IsSet())
+    return;
   u8 local_pad = 0;
   u8 pad = 0;
 
@@ -2080,6 +2226,26 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
   WARN_LOG_FMT(NETPLAY, "Traversal join: host lookup failed (reason {})", static_cast<int>(reason));
   m_connecting = false;
   m_connection_state = ConnectionState::Failure;
+  if (m_persistent_session)
+  {
+    switch (reason)
+    {
+    case Common::TraversalConnectFailedReason::ClientDidntRespond:
+      m_dialog->OnConnectionError(_trans("Traversal server timed out connecting to the host"));
+      break;
+    case Common::TraversalConnectFailedReason::ClientFailure:
+      m_dialog->OnConnectionError(_trans("Server rejected traversal attempt"));
+      break;
+    case Common::TraversalConnectFailedReason::NoSuchClient:
+      m_dialog->OnConnectionError(_trans("Invalid host"));
+      break;
+    default:
+      m_dialog->OnConnectionError(
+          fmt::format("Unknown traversal error {:x}", static_cast<int>(reason)));
+      break;
+    }
+    return;
+  }
   switch (reason)
   {
   case Common::TraversalConnectFailedReason::ClientDidntRespond:
@@ -2100,6 +2266,15 @@ void NetPlayClient::OnConnectFailed(Common::TraversalConnectFailedReason reason)
 // called from ---CPU--- thread
 bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatus* pad_status)
 {
+  // CPU pause is the usual admission gate. This also fences accidental frame advance
+  // during setup; no local sampling, enqueue, transport or FIFO pop precedes release.
+  while (m_persistent_session && !m_persistent_released.load())
+  {
+    if (!m_is_running.IsSet())
+      return false;
+    m_persistent_release_event.Wait();
+  }
+
   // The interface for this is extremely silly.
   //
   // Imagine a physical device that links three GameCubes together
@@ -2221,7 +2396,12 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     m_gc_pad_event.Wait();
   }
 
+  const auto queued = m_pad_buffer[pad_nb].Size();
   m_pad_buffer[pad_nb].Pop(*pad_status);
+  if (std::getenv("PPLUS_PHASE93_ATTACH"))
+    std::fprintf(stderr, "PHASE93 FIFO pop: port=%d queued=%zu target=%u x=%u y=%u buttons=%u\n",
+                 pad_nb, queued, BufferSizeForPort(pad_nb), pad_status->stickX,
+                 pad_status->stickY, pad_status->button);
 
   auto& movie = Core::System::GetInstance().GetMovie();
   if (movie.IsRecordingInput())
@@ -2324,6 +2504,10 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
     {
       // add to buffer
       m_pad_buffer[ingame_pad].Push(pad_status);
+      if (std::getenv("PPLUS_PHASE93_ATTACH"))
+        std::fprintf(stderr, "PHASE93 local enqueue: local=%d port=%d target=%u x=%u y=%u buttons=%u\n",
+                     local_pad, ingame_pad, BufferSizeForPort(ingame_pad), pad_status.stickX,
+                     pad_status.stickY, pad_status.button);
 
       // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);
@@ -2425,9 +2609,11 @@ void NetPlayClient::SendPadHostPoll(const PadIndex pad_num)
 
 void NetPlayClient::InvokeStop()
 {
+  ProjectPlusOnline::presentation.Invalidate();
   m_is_running.Clear();
 
   // stop waiting for input
+  m_persistent_release_event.Set();
   m_gc_pad_event.Set();
   m_wii_pad_event.Set();
   m_first_pad_status_received_event.Set();

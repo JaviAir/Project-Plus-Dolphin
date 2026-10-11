@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/Core.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
 
 #include <algorithm>
 #include <atomic>
@@ -246,6 +247,7 @@ bool Init(Core::System& system, std::unique_ptr<BootParameters> boot, const Wind
   g_video_backend->PrepareWindow(prepared_wsi);
 
   // Start the emu thread
+  ProjectPlusOnline::InvalidatePresentationCore();
   s_state.store(State::Starting);
   s_emu_thread = std::thread(EmuThread, std::ref(system), std::move(boot), prepared_wsi);
   return true;
@@ -272,6 +274,7 @@ void Stop(Core::System& system)  // - Hammertime!
     if (state == State::Stopping || state == State::Uninitialized)
       return;
 
+    ProjectPlusOnline::InvalidatePresentationCore();
     s_state.store(State::Stopping);
   }
 

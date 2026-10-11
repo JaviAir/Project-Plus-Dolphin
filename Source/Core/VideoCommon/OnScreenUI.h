@@ -53,6 +53,7 @@ public:
   void SetScale(float backbuffer_scale);
 
   void Finalize();
+  void DrawQuickPlayStatus();
 
   // Receive keyboard and mouse from QT
   void SetKeyMap(const DolphinKeyMap& key_map);

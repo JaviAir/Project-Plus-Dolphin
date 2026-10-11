@@ -7,15 +7,19 @@
 #include <QStringList>
 
 #include <array>
+#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
+#include <vector>
 
 #ifdef USE_RETRO_ACHIEVEMENTS
 #include "Common/Config/Config.h"
 #endif  // USE_RETRO_ACHIEVEMENTS
 
 #include "Core/Boot/Boot.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
+#include "Core/ProjectPlusOnline/SetupAction.h"
 #include "DolphinQt/FIFO/FIFOPlayerWindow.h"
 
 namespace NetPlay
@@ -53,6 +57,7 @@ class NetPlayDialog;
 class NetPlaySetupDialog;
 class NetworkWidget;
 class QuickPlayController;
+class PersistentQuickPlaySession;
 class QuickPlayDialog;
 class QuickPlaySettingsDialog;
 class RegisterWidget;
@@ -191,8 +196,26 @@ private:
   void ShowNetPlaySetupDialog();
   void ShowNetPlayBrowser();
   void StartQuickPlay();
+  void StartQuickPlayFrom(ProjectPlusOnline::EntrySource entry);
+  void BeginQuickPlaySearch();
+  void PublishQuickPlayPresentation();
+  ProjectPlusOnline::PresentationIdentity QuickPlayIdentity() const;
+  bool OwnsInGameQuickPlay() const;
+  void ObservePausedQuickPlayCSS();
+  void PrepareQuickPlayConnection(u64 attempt, bool host);
+  void ReportQuickPlayError(const QString& error);
+  void ShowQuickPlayDiagnostics();
+  void RedrawQuickPlayPresentation(std::function<void(bool)> finished = {});
+  void ValidateQuickPlayContent(u64 attempt, std::function<void(bool, QString)> finished);
+  void InvalidateQuickPlayPresentation();
+  void CancelQuickPlayValidation();
   void PublishQuickPlayStatus();
   void PrepareQuickPlayHandoff(u64 attempt);
+  void PreparePersistentQuickPlay(u32 game);
+  void HandlePersistentBarrier(u32 game, bool release);
+  void RetirePersistentQuickPlay(bool restore_css);
+  void FinishPersistentQuickPlayRetirement();
+  bool IsPersistentQuickPlayBoundary() const;
   void AdvanceQuickPlayPresentation(u64 attempt);
   void ReleaseQuickPlayWindow();
   void EndQuickPlaySession(bool restart);
@@ -216,7 +239,7 @@ private:
 
   void NetPlayInit();
   bool NetPlayJoin();
-  bool NetPlayJoinInternal(bool force_traversal);
+  bool NetPlayJoinInternal(bool force_traversal, const NetPlay::NetPlayServer* self_join = nullptr);
   bool NetPlayHostInternal(const UICommon::GameFile& game, u64 quickplay_attempt);
   bool JoinQuickPlayHost(const QString& host_code);
   bool m_quickplay_joining = false;
@@ -319,6 +342,28 @@ private:
   bool IsQuickPlayLaunchReady(u64 attempt);
   void CheckQuickPlayLaunch(u64 attempt);
   std::optional<QuickPlaySetup> m_quickplay_setup;
+  std::unique_ptr<PersistentQuickPlaySession> m_persistent_quickplay;
+  std::unique_ptr<PersistentQuickPlaySession> m_persistent_candidate;
+  bool m_quickplay_cancel_consumed = false;
+  std::optional<ProjectPlusOnline::PresentationIdentity> m_quickplay_paused_css;
+  bool m_persistent_retiring = false;
+  bool m_persistent_restore_css = false;
+  u32 m_persistent_game = 0;
+  const NetPlay::NetPlayClient* m_persistent_client = nullptr;
+  const NetPlay::NetPlayServer* m_persistent_server = nullptr;
+  ProjectPlusOnline::EntrySource m_quickplay_entry = ProjectPlusOnline::EntrySource::Desktop;
+  u64 m_quickplay_owned_attempt = 0;
+  u64 m_quickplay_owner_core = 0;
+  bool m_quickplay_validation_was_running = false;
+  std::optional<ProjectPlusOnline::PrepaintFence> m_quickplay_validation_fence;
+  u64 m_quickplay_room_generation = 1;
+  u64 m_quickplay_validation_request = 0;
+  bool m_quickplay_validating = false;
+  bool m_quickplay_blocking_connection = false;
+  bool m_quickplay_redraw_pending = false;
+  QString m_quickplay_admission_error;
+  std::vector<std::function<void(bool)>> m_quickplay_redraw_callbacks;
+  std::chrono::steady_clock::time_point m_quickplay_cancelled_until{};
   enum class QuickPlayPresentation
   {
     None,

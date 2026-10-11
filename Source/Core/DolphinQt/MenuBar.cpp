@@ -295,6 +295,7 @@ void MenuBar::AddToolsMenu()
   tools_menu->addSeparator();
 
   tools_menu->addAction(tr("Start &NetPlay..."), this, &MenuBar::StartNetPlay);
+  tools_menu->addAction(tr("Quick Play &Diagnostics..."), this, &MenuBar::ShowQuickPlayDiagnostics);
   tools_menu->addAction(tr("Browse &NetPlay Sessions...."), this, &MenuBar::BrowseNetPlay);
 
   tools_menu->addSeparator();

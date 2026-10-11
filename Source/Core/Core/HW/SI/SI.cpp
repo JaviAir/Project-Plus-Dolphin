@@ -4,6 +4,7 @@
 #include "Core/HW/SI/SI.h"
 
 #include <array>
+#include <cstdlib>
 #include <cstring>
 #include <memory>
 
@@ -371,7 +372,15 @@ void SerialInterfaceManager::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
                      auto& si = system.GetSerialInterface();
                      si.m_status_reg.hex &= clear_rdst;
                      si.UpdateInterrupts();
-                     return si.m_channel[i].in_hi.hex;
+                     const u32 response = si.m_channel[i].in_hi.hex;
+                     // Phase 9.1 read-only probe: include release and button samples.
+                     if (std::getenv("PPLUS_PHASE91_INPUT_OBSERVE") && i < 2)
+                     {
+                       INFO_LOG_FMT(SERIALINTERFACE,
+                                    "PHASE91 guest SI read: port={} main_stick=({}, {}) response={:#010x}",
+                                    i, (response >> 8) & 0xff, response & 0xff, response);
+                     }
+                     return response;
                    }),
                    MMIO::DirectWrite<u32>(&m_channel[i].in_hi.hex));
     mmio->Register(base | (SI_CHANNEL_0_IN_LO + 0xC * i),
@@ -562,7 +571,9 @@ void SerialInterfaceManager::UpdateDevices()
   {
     // ERRLATCH bit is maintained.
     u32 errlatch = m_channel[i].in_hi.ERRLATCH.Value();
-    switch (m_channel[i].device->GetData(m_channel[i].in_hi.hex, m_channel[i].in_lo.hex))
+    const DataResponse response =
+        m_channel[i].device->GetData(m_channel[i].in_hi.hex, m_channel[i].in_lo.hex);
+    switch (response)
     {
     case DataResponse::Success:
       m_status_reg.hex |= GetRDSTBit(i);
@@ -577,6 +588,16 @@ void SerialInterfaceManager::UpdateDevices()
     }
 
     m_channel[i].in_hi.ERRLATCH = errlatch;
+
+    // Phase 9.1 read-only probe: log the controller sample placed in guest-visible
+    // SI registers. Logging is opt-in and limited to controller ports 1 and 2.
+    if (std::getenv("PPLUS_PHASE91_INPUT_OBSERVE") && i < 2 &&
+        response == DataResponse::Success)
+    {
+      INFO_LOG_FMT(SERIALINTERFACE,
+                   "PHASE91 SI poll sample: port={} input_high={:#010x} input_low={:#010x}",
+                   i, m_channel[i].in_hi.hex, m_channel[i].in_lo.hex);
+    }
   }
 
   UpdateInterrupts();

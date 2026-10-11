@@ -8,16 +8,41 @@
 #include "Common/Logging/Log.h"
 #include "Common/MsgHandler.h"
 #include "Core/Config/MainSettings.h"
+#include "Core/ConfigManager.h"
+#include "Core/Core.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/GCPad.h"
+#include "Core/HW/Memmap.h"
 #include "Core/HW/ProcessorInterface.h"
 #include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/HW/SystemTimers.h"
+#include "Core/Host.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/ProjectPlusOnline/Chord.h"
+#include "Core/ProjectPlusOnline/LocalCSS.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
+#include "Core/ProjectPlusOnline/SetupAction.h"
+#include "Core/ProjectPlusOnline/Status.h"
 #include "Core/System.h"
 #include "InputCommon/GCPadStatus.h"
+#include "InputCommon/ControlReference/ControlReference.h"
+#include "InputCommon/ControllerEmu/ControllerEmu.h"
+#include "InputCommon/InputConfig.h"
+
+bool ProjectPlusOnline::ObserveLocalCSS(Core::System& system)
+{
+  ASSERT(Core::IsCPUThread());
+  auto& memory = system.GetMemory();
+  const auto valid = [](u32 p) {
+    return (p >= 0x80000000 && p < 0x81800000) || (p >= 0x90000000 && p < 0x94000000);
+  };
+  const u32 scene = memory.Read_U32(0x805b8ba4);
+  const u32 name = valid(scene) ? memory.Read_U32(scene) : 0;
+  const auto* bytes = valid(name) ? memory.GetPointerForRange(name, 16) : nullptr;
+  return bytes && std::string_view(reinterpret_cast<const char*>(bytes), 16) == "scSelctCharacter";
+}
 
 namespace SerialInterface
 {
@@ -147,6 +172,53 @@ GCPadStatus CSIDevice_GCController::GetPadStatus()
   if (!NetPlay::IsNetPlayRunning())
   {
     pad_status = Pad::GetStatus(m_device_number);
+    if (m_device_number == 0)
+    {
+      static ProjectPlusOnline::LocalChord chord;
+      static u64 epoch = 0;
+      const auto current_epoch = ProjectPlusOnline::persistent_input_epoch.load();
+      if (epoch != current_epoch)
+      {
+        chord = {};
+        epoch = current_epoch;
+      }
+      const bool css = ProjectPlusOnline::ObserveLocalCSS(m_system);
+      const auto attempt = ProjectPlusOnline::guest_cancel_attempt.load();
+      const bool enabled = ProjectPlusOnline::persistent_local_input.load() && css &&
+                           !Core::WantsDeterminism() && !m_system.GetMovie().IsMovieActive();
+      ProjectPlusOnline::local_css.Observe(ProjectPlusOnline::presentation_core_generation.load(),
+                                           current_epoch, enabled && pad_status.isConnected);
+      const auto action = chord.Poll(enabled && pad_status.isConnected, pad_status.button, attempt);
+      if (action != ProjectPlusOnline::LocalChord::Action::None)
+      {
+        Core::QueueHostJob([current_epoch, attempt, action](Core::System&) {
+          // The host dispatcher serializes lifecycle changes. Do not hold a CPU
+          // guard while synchronously invoking GUI actions that pause the Core.
+          if (!ProjectPlusOnline::persistent_local_input.load() || Core::WantsDeterminism() ||
+              current_epoch != ProjectPlusOnline::persistent_input_epoch.load())
+            return;
+          if (action == ProjectPlusOnline::LocalChord::Action::Search)
+          {
+            INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: local CSS search chord dispatched");
+            Host_Message(HostMessageID::WMUserStartQuickPlay);
+          }
+          else if (attempt && ProjectPlusOnline::guest_cancel_attempt.load() == attempt)
+            Host_Message(HostMessageID::WMUserCancelQuickPlay);
+        });
+      }
+      const bool release_sample = ControlReference::GetInputGate() && [] {
+        const auto lock = ControllerEmu::EmulatedController::GetStateLock();
+        return Pad::GetConfig()->GetController(0)->IsDefaultDeviceConnected();
+      }();
+      const bool handed_off = ProjectPlusOnline::cancel_release_handoff.Consume(
+          ProjectPlusOnline::presentation_core_generation.load(), current_epoch,
+          pad_status.isConnected, (pad_status.button & PAD_BUTTON_B) != 0, release_sample);
+      if (chord.ConsumesCancel() || handed_off)
+      {
+        pad_status.button &= ~PAD_BUTTON_B;
+        pad_status.analogB = 0;
+      }
+    }
   }
 
   HandleMoviePadStatus(m_system.GetMovie(), m_device_number, &pad_status);

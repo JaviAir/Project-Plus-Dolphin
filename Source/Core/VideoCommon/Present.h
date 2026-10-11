@@ -41,7 +41,10 @@ public:
 
   void SetNextSwapEstimatedTime(u64 ticks, TimePoint host_time);
 
-  void Present(PresentInfo* present_info = nullptr);
+  bool Present(PresentInfo* present_info = nullptr);
+  // Presentation only: no VI events, XFB fetch/state restore, or guest execution.
+  // Must be called by the paused single-core CPU/GPU owner.
+  bool RedrawRetainedFrame();
   void ClearLastXfbId() { m_last_xfb_id = std::numeric_limits<u64>::max(); }
 
   bool Initialize();
@@ -106,6 +109,8 @@ public:
   int FrameCount() const { return m_frame_count; }
 
   void DoState(PointerWrap& p);
+  void ResearchXFBProbe(const char* phase) const;  // Temporary Phase 9.1 probe
+  void ResearchRedrawAfterStateLoad();  // Temporary Phase 9.1 experiment
 
   const MathUtil::Rectangle<int>& GetTargetRectangle() const { return m_target_rectangle; }
 

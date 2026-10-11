@@ -73,6 +73,7 @@ signals:
   void Fullscreen();
   void FrameAdvance();
   void Screenshot();
+  void ShowQuickPlayDiagnostics();
   void StartNetPlay();
   void BrowseNetPlay();
   void StateLoad();

@@ -97,6 +97,12 @@ void Load(Core::System& system, int slot);
 
 void SaveAs(Core::System& system, std::string filename);
 void LoadAs(Core::System& system, std::string filename);
+// Session owner only: execute on the actual CPU/GPU thread with the Core paused.
+// Uses normal state header/serializer checks; restores an undo buffer on failure.
+bool LoadForPersistentSession(Core::System& system, const std::string& filename);
+
+// Temporary Phase 9.1 opt-in raw export; call only on the paused CPU thread.
+bool ResearchExport(Core::System& system, const std::string& name);
 
 void LoadLastSaved(Core::System& system, int i = 1);
 void SaveFirstSaved(Core::System& system);

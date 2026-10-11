@@ -7,6 +7,7 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -33,6 +34,7 @@
 #include "Common/Version.h"
 
 #include "Core/AchievementManager.h"
+#include "Core/Core.h"
 #include "Core/ActionReplay.h"
 #include "Core/Boot/Boot.h"
 #include "Core/Config/GraphicsSettings.h"
@@ -62,6 +64,7 @@
 #include "Core/NetPlayClient.h"  //for NetPlayUI
 #include "Core/NetPlayCommon.h"
 #include "Core/SyncIdentifier.h"
+#include "Core/System.h"
 
 #include "DiscIO/Enums.h"
 #include "DiscIO/RiivolutionPatcher.h"
@@ -125,7 +128,11 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
   //--use server time
   if (enet_initialize() != 0)
   {
-    PanicAlertFmtT("Enet Didn't Initialize");
+    if (m_dialog && m_quickplay_attempt)
+      m_dialog->OnConnectionError(_trans("ENet did not initialize."));
+    else
+      PanicAlertFmtT("Enet Didn't Initialize");
+    return;
   }
 
   m_pad_map.fill(0);
@@ -138,6 +145,8 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
                                        traversal_config.traversal_port,
                                        traversal_config.traversal_port_alt, port))
     {
+      if (m_dialog && m_quickplay_attempt)
+        m_dialog->OnConnectionError(_trans("Could not initialize the traversal host."));
       return;
     }
 
@@ -450,7 +459,7 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
   std::string netplay_version;
   received_packet >> netplay_version;
-  if (netplay_version != Common::GetScmRevGitStr())
+  if (netplay_version != Common::GetScmRevGitStr() + "-persistent1")
     return ConnectionError::VersionMismatch;
 
   if (m_is_running || m_start_pending)
@@ -935,6 +944,9 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
         spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
              << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
+        if (std::getenv("PPLUS_PHASE93_ATTACH"))
+          std::fprintf(stderr, "PHASE93 server relay: owner=%u port=%d x=%u y=%u buttons=%u\n",
+                       player.pid, map, pad.stickX, pad.stickY, pad.button);
       }
     }
 
@@ -1103,6 +1115,59 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     SendToClients(spac);
   }
   break;
+
+  case MessageID::PersistentReady:
+  case MessageID::PersistentAttached:
+  {
+    std::lock_guard game_lock(m_crit.game);
+    std::lock_guard players_lock(m_crit.players);
+    u32 game = 0;
+    packet >> game;
+    if (!packet || !m_persistent_session || !m_is_running || game != m_current_game ||
+        m_players.size() != 2 || m_pad_map != PadMappingArray{1, 2, 0, 0} ||
+        (player.pid != 1 && player.pid != 2))
+      break;
+    if (mid == MessageID::PersistentReady)
+    {
+      std::string identity;
+      packet >> identity;
+      if (!packet || identity.size() != 64 || m_persistent_attach_sent)
+        break;
+      const auto [it, inserted] = m_persistent_ready.emplace(player.pid, identity);
+      if (!inserted && it->second != identity)
+        return 1;
+      if (m_persistent_ready.size() != 2)
+        break;
+      if (m_persistent_ready.at(1) != m_persistent_ready.at(2))
+      {
+        sf::Packet stop;
+        stop << MessageID::StopGame;
+        SendToClients(stop);
+        m_is_running = false;
+        ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: checkpoint/content contract mismatch");
+        break;
+      }
+      m_persistent_attach_sent = true;
+      sf::Packet attach;
+      attach << MessageID::PersistentAttach << game;
+      SendToClients(attach);
+      INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: both peers ready game {}", game);
+    }
+    else
+    {
+      if (!m_persistent_attach_sent || m_persistent_release_sent)
+        break;
+      m_persistent_attached.insert(player.pid);
+      if (m_persistent_attached.size() != 2)
+        break;
+      m_persistent_release_sent = true;
+      sf::Packet release;
+      release << MessageID::PersistentRelease << game;
+      SendToClients(release);
+      INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: both peers attached; release game {}", game);
+    }
+    break;
+  }
 
   case MessageID::StartGame:
   {
@@ -1397,6 +1462,9 @@ void NetPlayServer::NotifyHostTraversalState()
 
 void NetPlayServer::OnTraversalStateChanged()
 {
+  if (m_dialog && m_persistent_session &&
+      m_traversal_client->GetState() == Common::TraversalClient::State::Failure)
+    m_dialog->OnTraversalError(m_traversal_client->GetFailureReason());
   NotifyHostTraversalState();
   const Common::TraversalClient::State state = m_traversal_client->GetState();
 
@@ -1481,7 +1549,10 @@ bool NetPlayServer::SetupNetSettings()
   {
     ERROR_LOG_FMT(NETPLAY, "Game {:02x} not found in game list.",
                   fmt::join(m_selected_game_identifier.sync_hash, ""));
-    PanicAlertFmtT("Selected game doesn't exist in game list!");
+    if (m_persistent_session && m_dialog)
+      m_dialog->OnConnectionError(_trans("Selected game doesn't exist in game list!"));
+    else
+      PanicAlertFmtT("Selected game doesn't exist in game list!");
     return false;
   }
 
@@ -1490,13 +1561,20 @@ bool NetPlayServer::SetupNetSettings()
 
   NetPlay::NetSettings settings;
 
+  const bool live_research = (m_persistent_session || std::getenv("PPLUS_PHASE93_ATTACH")) &&
+                             Core::IsRunning(Core::System::GetInstance());
+
   // Load GameINI so we can sync the settings from it
-  Config::AddLayer(
-      ConfigLoaders::GenerateGlobalGameConfigLoader(game->GetGameID(), game->GetRevision()));
-  Config::AddLayer(
-      ConfigLoaders::GenerateLocalGameConfigLoader(game->GetGameID(), game->GetRevision()));
+  if (!live_research)
+  {
+    Config::AddLayer(
+        ConfigLoaders::GenerateGlobalGameConfigLoader(game->GetGameID(), game->GetRevision()));
+    Config::AddLayer(
+        ConfigLoaders::GenerateLocalGameConfigLoader(game->GetGameID(), game->GetRevision()));
+  }
 
   // Copy all relevant settings
+  settings.persistent_session = m_persistent_session;
   settings.cpu_thread = Config::Get(Config::MAIN_CPU_THREAD);
   settings.cpu_core = Config::Get(Config::MAIN_CPU_CORE);
   settings.enable_cheats = Config::AreCheatsEnabled();
@@ -1602,8 +1680,11 @@ bool NetPlayServer::SetupNetSettings()
   settings.spectator_mode = Config::Get(Config::NETPLAY_SPECTATOR_MODE);
 
   // Unload GameINI to restore things to normal
-  Config::RemoveLayer(Config::LayerType::GlobalGame);
-  Config::RemoveLayer(Config::LayerType::LocalGame);
+  if (!live_research)
+  {
+    Config::RemoveLayer(Config::LayerType::GlobalGame);
+    Config::RemoveLayer(Config::LayerType::LocalGame);
+  }
 
   m_settings = settings;
 
@@ -1702,6 +1783,10 @@ bool NetPlayServer::StartGame()
 {
   INFO_LOG_FMT(NETPLAY, "Starting game.");
 
+  m_persistent_ready.clear();
+  m_persistent_attached.clear();
+  m_persistent_attach_sent = false;
+  m_persistent_release_sent = false;
   m_timebase_by_frame.clear();
   m_desync_detected = false;
   std::lock_guard lkg(m_crit.game);
@@ -1769,6 +1854,7 @@ bool NetPlayServer::StartGame()
   spac << m_settings.divide_by_zero_exceptions;
   spac << m_settings.fprf;
   spac << m_settings.accurate_nans;
+  spac << m_settings.accurate_fmadds;
   spac << m_settings.disable_icache;
   spac << m_settings.sync_on_skip_idle;
   spac << m_settings.sync_gpu;
@@ -1809,6 +1895,7 @@ bool NetPlayServer::StartGame()
   spac << m_settings.golf_mode;
   spac << m_settings.use_fma;
   spac << m_settings.hide_remote_gbas;
+  spac << m_settings.persistent_session;
 
   for (size_t i = 0; i < sizeof(m_settings.sram); ++i)
     spac << m_settings.sram[i];
@@ -1862,7 +1949,10 @@ std::optional<SaveSyncInfo> NetPlayServer::CollectSaveSyncInfo()
   sync_info.game = m_dialog->FindGameFile(m_selected_game_identifier);
   if (sync_info.game == nullptr)
   {
-    PanicAlertFmtT("Selected game doesn't exist in game list!");
+    if (m_persistent_session && m_dialog)
+      m_dialog->OnConnectionError(_trans("Selected game doesn't exist in game list!"));
+    else
+      PanicAlertFmtT("Selected game doesn't exist in game list!");
     return std::nullopt;
   }
 
@@ -2190,7 +2280,10 @@ bool NetPlayServer::SyncCodes()
   const auto game = m_dialog->FindGameFile(m_selected_game_identifier);
   if (game == nullptr)
   {
-    PanicAlertFmtT("Selected game doesn't exist in game list!");
+    if (m_persistent_session && m_dialog)
+      m_dialog->OnConnectionError(_trans("Selected game doesn't exist in game list!"));
+    else
+      PanicAlertFmtT("Selected game doesn't exist in game list!");
     return false;
   }
 

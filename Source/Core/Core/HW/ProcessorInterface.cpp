@@ -18,6 +18,7 @@
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/STM/STM.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/System.h"
 #include "VideoCommon/AsyncRequests.h"
 #include "VideoCommon/CommandProcessor.h"
@@ -264,6 +265,7 @@ void ProcessorInterfaceManager::ResetButton_Tap()
   if (!Core::IsRunning(m_system))
     return;
 
+  ProjectPlusOnline::InvalidatePresentationCore();
   auto& core_timing = m_system.GetCoreTiming();
   core_timing.ScheduleEvent(0, m_event_type_toggle_reset_button, true, CoreTiming::FromThread::ANY);
   core_timing.ScheduleEvent(0, m_event_type_ios_notify_reset_button, 0,

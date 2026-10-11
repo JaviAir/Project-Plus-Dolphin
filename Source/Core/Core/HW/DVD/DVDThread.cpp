@@ -111,6 +111,14 @@ bool DVDThread::HasDisc() const
   return m_disc != nullptr;
 }
 
+std::optional<std::array<u8, 20>> DVDThread::GetInsertedDiscSyncHash()
+{
+  if (!m_disc)
+    return std::nullopt;
+  WaitUntilIdle();
+  return m_disc->GetSyncHash();
+}
+
 bool DVDThread::HasWiiHashes() const
 {
   // HasWiiHashes is thread-safe, so calling WaitUntilIdle isn't necessary.

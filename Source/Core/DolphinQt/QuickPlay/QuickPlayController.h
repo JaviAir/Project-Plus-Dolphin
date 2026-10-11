@@ -25,6 +25,7 @@ public:
     MatchedClient,
     PreparingHandoff,
     WaitingForCoreStop,
+    WaitingForHandoff,
     ValidatingMatch,
     CreatingHost,
     WaitingForTraversalCode,
@@ -40,7 +41,7 @@ public:
 
   using StartHost = std::function<QString(std::uint64_t)>;
   using CancelHost = std::function<void(std::uint64_t)>;
-  using JoinHost = std::function<bool(const QString&)>;
+  using JoinHost = std::function<QString(const QString&)>;
   QuickPlayController(StartHost start_host, CancelHost cancel_host, JoinHost join_host,
                       QObject* parent = nullptr);
   ~QuickPlayController() override;
@@ -53,14 +54,17 @@ public:
   std::uint64_t GetGuestCancelAttempt() const;
   // Called only by the host owner, after all old-Core stop observers have drained.
   void OnCoreStopped(std::uint64_t attempt, const QString& error = {});
+  void OnHandoffReady(std::uint64_t attempt, const QString& error = {});
   bool OwnsAttempt(std::uint64_t attempt) const { return attempt == m_attempt; }
   void OnHostTraversalChanged(quint64 attempt, const QString& code, bool failed);
   void OnHostOpponentConnected(quint64 attempt);
   void OnHostClosed(std::uint64_t attempt);
   void OnLaunchOwned(std::uint64_t attempt);
   void OnLaunchFailed(std::uint64_t attempt, const QString& error);
+  void ContinueConnection(std::uint64_t attempt, bool host, const QString& error);
 
 signals:
+  void PrepareConnection(quint64 attempt, bool host);
   void PrepareHandoff(quint64 attempt);
   void StateChanged(QuickPlayController::State state);
 
@@ -71,6 +75,8 @@ private:
   void ClaimMatch(const QuickPlayClient::Result& result);
   void BeginHost(std::uint64_t attempt);
   void BeginJoin(std::uint64_t attempt);
+  void ConnectHost(std::uint64_t attempt);
+  void ConnectJoin(std::uint64_t attempt);
   void Fail(QString error);
   void Complete();
   StartHost m_start_host;

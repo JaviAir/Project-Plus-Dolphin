@@ -231,7 +231,7 @@ void QuickPlayClient::Start(const QString& base_url, const QString& region_input
 
   QString normalized_url;
   const QString url_error = NormalizeCoordinatorUrl(base_url, &normalized_url);
-  const QString build = QString::fromStdString(Common::GetScmRevGitStr());
+  const QString build = QString::fromStdString(Common::GetScmRevGitStr() + "-persistent1");
   const QString version = QString::fromStdString(Common::GetScmDescStr());
   if (!url_error.isEmpty() || !IsValidRegion(region) || !IsField(build, 128) ||
       !IsField(version, 64))

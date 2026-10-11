@@ -6,6 +6,7 @@
 #include <OptionParser.h>
 #include <csignal>
 #include <cstdio>
+#include <cstdlib>
 #include <string>
 #include <vector>
 
@@ -19,6 +20,7 @@
 #include "Core/Boot/Boot.h"
 #include "Core/BootManager.h"
 #include "Core/Core.h"
+#include "Core/ConfigManager.h"
 #include "Core/DolphinAnalytics.h"
 #include "Core/Host.h"
 #include "Core/System.h"
@@ -271,6 +273,10 @@ int main(const int argc, char* argv[])
   UICommon::SetUserDirectory(user_directory);
   UICommon::Init();
   UICommon::InitControllers(wsi);
+
+  // Research-only: start paused so a script can load the common checkpoint.
+  if (std::getenv("PPLUS_PHASE91_CONTROL_DIR"))
+    SConfig::GetInstance().bBootToPause = true;
 
   Common::ScopeGuard ui_common_guard([] {
     UICommon::ShutdownControllers();

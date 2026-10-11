@@ -55,6 +55,7 @@ public:
   bool DoAllPlayersHaveHardwareFMA() const;
   bool StartGame();
   bool RequestStartGame();
+  void SetPersistentSession(bool enabled) { m_persistent_session = enabled; }
   void AbortGameStart();
 
   PadMappingArray GetPadMapping() const;
@@ -166,6 +167,11 @@ private:
   PlayerId GiveFirstAvailableIDTo(ENetPeer* player);
 
   NetSettings m_settings;
+  std::atomic<bool> m_persistent_session{false};
+  std::map<PlayerId, std::string> m_persistent_ready;
+  std::unordered_set<PlayerId> m_persistent_attached;
+  bool m_persistent_attach_sent = false;
+  bool m_persistent_release_sent = false;
 
   bool m_is_running = false;
   bool m_do_loop = false;

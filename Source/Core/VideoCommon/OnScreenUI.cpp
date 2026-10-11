@@ -15,6 +15,9 @@
 #include "Core/Config/MainSettings.h"
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Movie.h"
+#include "Core/ProjectPlusOnline/Presentation.h"
+#include "Core/ProjectPlusOnline/SetupAction.h"
+#include "Core/ProjectPlusOnline/Status.h"
 #include "Core/System.h"
 #include "InputCommon/GCAdapter.h"
 
@@ -34,6 +37,8 @@
 
 #include <inttypes.h>
 #include <mutex>
+#include <string>
+#include <string_view>
 
 #include <imgui.h>
 #include <implot.h>
@@ -445,6 +450,9 @@ void OnScreenUI::Finalize()
   DrawDebugText();
   OSD::DrawMessages();
   DrawChallengesAndLeaderboards();
+  ProjectPlusOnline::host_ui_input_blocked =
+      ImGui::GetIO().WantCaptureKeyboard || ImGui::GetIO().WantCaptureMouse;
+  DrawQuickPlayStatus();
   ImGui::Render();
 
   // Check for font changes
@@ -459,6 +467,70 @@ void OnScreenUI::Finalize()
     for (ImTextureData* tex : *draw_data->Textures)
       if (tex->Status != ImTextureStatus_OK)
         UpdateImguiTexture(tex);
+}
+
+void OnScreenUI::DrawQuickPlayStatus()
+{
+  using namespace ProjectPlusOnline;
+  const auto core = presentation_core_generation.load();
+  const auto input = persistent_input_epoch.load();
+  const auto value = presentation.Read(core, input);
+  if (value.phase == PresentationPhase::Hidden || !value.text[0] || !g_presenter)
+    return;
+  // Loss of action authority removes the hint, while persistent setup/error text stays visible.
+  const auto action = setup_action.Read();
+  const bool paused_cancel = action.identity == value.identity && setup_action.Available(action);
+  const bool local = local_css.Read().IsFresh(core, input, std::chrono::steady_clock::now());
+  if (value.phase == PresentationPhase::LocalCSS && !local)
+    return;
+
+  const float padding = 8.0f * m_backbuffer_scale;
+  const auto& target = g_presenter->GetTargetRectangle();
+  const float right = std::min(float(target.right), float(m_backbuffer_width)) - padding;
+  const float width = std::max(1.0f, std::min(float(target.GetWidth()) * 0.45f, right - padding));
+  std::string text(value.text.data());
+  if (value.cancel && (local || paused_cancel) && value.cancel_text[0])
+    text += std::string("   ") + value.cancel_text.data();
+  const float maximum_text_height = ImGui::GetTextLineHeight() * 2;
+  while (!text.empty() &&
+         ImGui::CalcTextSize(text.c_str(), nullptr, false, width).y > maximum_text_height)
+  {
+    if (text.ends_with("…"))
+      text.resize(text.size() - std::string_view("…").size());
+    if (text.empty())
+      break;
+    auto last = text.size() - 1;
+    while (last && (static_cast<unsigned char>(text[last]) & 0xc0) == 0x80)
+      --last;
+    text.resize(last);
+    if (!text.empty())
+      text += "…";
+  }
+  const ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false, width);
+  const float height = text_size.y + padding * 2;
+  // Prefer the measured upper letterbox; the compact viewport fallback still
+  // requires user capture review in Step4. Never move/resize the game viewport.
+  const float top =
+      target.top >= height + padding ? padding : std::max(padding, float(target.top) + padding);
+  if (presentation_core_generation.load() != core || persistent_input_epoch.load() != input ||
+      !presentation.IsCurrent(value))
+    return;
+  ImGui::SetNextWindowPos(ImVec2(right, top), ImGuiCond_Always, ImVec2(1, 0));
+  ImGui::SetNextWindowSize(ImVec2(width + padding * 2, height));
+  ImGui::SetNextWindowBgAlpha(0.85f);
+  ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(padding, padding));
+  if (ImGui::Begin("##QuickPlayStatus", nullptr,
+                   ImGuiWindowFlags_NoTitleBar | ImGuiWindowFlags_NoInputs |
+                       ImGuiWindowFlags_NoNav | ImGuiWindowFlags_NoFocusOnAppearing |
+                       ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoMove |
+                       ImGuiWindowFlags_NoScrollbar))
+  {
+    ImGui::PushTextWrapPos(ImGui::GetCursorPosX() + width);
+    ImGui::TextUnformatted(text.c_str());
+    ImGui::PopTextWrapPos();
+  }
+  ImGui::End();
+  ImGui::PopStyleVar();
 }
 
 void OnScreenUI::UpdateImguiTexture(ImTextureData* tex)

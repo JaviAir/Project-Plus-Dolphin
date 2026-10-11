@@ -63,6 +63,7 @@ std::uint64_t QuickPlayController::GetGuestCancelAttempt() const
   case State::MatchedClient:
   case State::PreparingHandoff:
   case State::WaitingForCoreStop:
+  case State::WaitingForHandoff:
   case State::ValidatingMatch:
   case State::CreatingHost:
   case State::WaitingForTraversalCode:
@@ -118,7 +119,7 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
       if (result.match_id != m_match_id ||
           (result.state == QuickPlayClient::State::MatchedHost) != m_is_host)
       {
-        Fail(tr("The Quick Play assignment changed during shutdown. Cancel and try again."));
+        Fail(tr("The Quick Play assignment changed during handoff. Cancel and try again."));
         return;
       }
       if (m_is_host)
@@ -168,8 +169,8 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
 
 void QuickPlayController::ClaimMatch(const QuickPlayClient::Result& result)
 {
-  // Ownership moves here, before any signal, dialog completion, or Core stop. Only host
-  // values are retained; the old EXI endpoint and guest generation die with the Core.
+  // Claim the assignment before any signal or asynchronous handoff. Keep only
+  // host-owned values; checkpoint restoration can invalidate guest endpoints.
   const auto attempt = m_attempt;
   m_match_id = result.match_id;
   m_is_host = result.state == QuickPlayClient::State::MatchedHost;
@@ -183,21 +184,26 @@ void QuickPlayController::ClaimMatch(const QuickPlayClient::Result& result)
   SetState(State::PreparingHandoff);
   if (attempt != m_attempt)
     return;
-  SetState(State::WaitingForCoreStop);
+  SetState(State::WaitingForHandoff);
   if (attempt == m_attempt)
     emit PrepareHandoff(attempt);
 }
 
 void QuickPlayController::OnCoreStopped(std::uint64_t attempt, const QString& error)
 {
-  if (attempt != m_attempt || m_state != State::WaitingForCoreStop)
+  OnHandoffReady(attempt, error);
+}
+
+void QuickPlayController::OnHandoffReady(std::uint64_t attempt, const QString& error)
+{
+  if (attempt != m_attempt || m_state != State::WaitingForHandoff)
     return;
   if (!error.isEmpty())
   {
     Fail(error);
     return;
   }
-  INFO_LOG_FMT(NETPLAY, "QuickPlay: old Core stopped, validating attempt {}", attempt);
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: boundary prepared, validating attempt {}", attempt);
   SetState(State::ValidatingMatch);
   // Recheck the real ticket after shutdown, before constructing any NetPlay object.
   // This catches coordinator invalidation/peer cancellation while the Core stopped.
@@ -209,9 +215,26 @@ void QuickPlayController::BeginJoin(std::uint64_t attempt)
 {
   if (attempt != m_attempt || m_state != State::Connecting)
     return;
+  emit PrepareConnection(attempt, false);
+}
+
+void QuickPlayController::ContinueConnection(std::uint64_t attempt, bool host, const QString& error)
+{
+  if (attempt != m_attempt || m_state != (host ? State::CreatingHost : State::Connecting))
+    return;
+  if (!error.isEmpty())
+    return Fail(error);
+  if (host)
+    ConnectHost(attempt);
+  else
+    ConnectJoin(attempt);
+}
+
+void QuickPlayController::ConnectJoin(std::uint64_t attempt)
+{
   INFO_LOG_FMT(NETPLAY, "QuickPlay: invoking NetPlay join");
   m_joining = true;
-  const bool joined = m_join_host(m_host_code);
+  const auto error = m_join_host(m_host_code);
   m_joining = false;
   // Existing synchronous NetPlay setup may enter a modal error loop. Cancel/close invalidates
   // this result there; never tear down an opened lobby or overwrite a newer attempt.
@@ -220,10 +243,10 @@ void QuickPlayController::BeginJoin(std::uint64_t attempt)
     m_cancel_host(attempt);
     return;
   }
-  if (!joined)
+  if (!error.isEmpty())
   {
     WARN_LOG_FMT(NETPLAY, "QuickPlay: NetPlay join failed");
-    Fail(tr("Could not join the Quick Play host. The host may have left. Cancel and try again."));
+    Fail(error);
     return;
   }
   INFO_LOG_FMT(NETPLAY, "QuickPlay: NetPlay join started");
@@ -276,6 +299,11 @@ void QuickPlayController::BeginHost(std::uint64_t attempt)
   SetState(State::CreatingHost);
   if (attempt != m_attempt)
     return;
+  emit PrepareConnection(attempt, true);
+}
+
+void QuickPlayController::ConnectHost(std::uint64_t attempt)
+{
   INFO_LOG_FMT(NETPLAY, "QuickPlay: creating NetPlay host");
   m_creating_host = true;
   const auto error = m_start_host(attempt);

@@ -25,6 +25,7 @@ QuickPlayDialog::QuickPlayDialog(QuickPlayController& controller, QWidget* paren
   layout->addWidget(preview);
 
   m_status = new QLabel;
+  m_status->setTextFormat(Qt::PlainText);
   m_status->setAlignment(Qt::AlignCenter);
   m_status->setWordWrap(true);
   // Reserve space for multiline errors even while displaying the short Searching text.
@@ -88,7 +89,8 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
     break;
   case QuickPlayController::State::PreparingHandoff:
   case QuickPlayController::State::WaitingForCoreStop:
-    m_status->setText(tr("Opponent found. Stopping the local game..."));
+  case QuickPlayController::State::WaitingForHandoff:
+    m_status->setText(tr("Opponent found. Preparing session..."));
     break;
   case QuickPlayController::State::ValidatingMatch:
     m_status->setText(tr("Checking match..."));

@@ -298,6 +298,8 @@ add_executable(project-plus-dolphin
   ProjectPlus/InstallUpdateDialog.h
   ProjectPlus/UpdateDialog.cpp
   ProjectPlus/UpdateDialog.h
+  QuickPlay/PersistentSession.cpp
+  QuickPlay/PersistentSession.h
   QuickPlay/QuickPlayClient.cpp
   QuickPlay/QuickPlayClient.h
   QuickPlay/QuickPlayController.cpp
@@ -739,4 +741,14 @@ if(USE_RETRO_ACHIEVEMENTS)
   if(RC_CLIENT_SUPPORTS_RAINTEGRATION)
     target_compile_definitions(project-plus-dolphin PRIVATE -DRC_CLIENT_SUPPORTS_RAINTEGRATION)
   endif()
+endif()
+
+# Isolated queued-action tests use Qt Core only and never bootstrap emulator Settings.
+if(ENABLE_TESTS)
+  add_executable(ui96-setup-dispatch-tests EXCLUDE_FROM_ALL
+    ../../UnitTests/Core/ProjectPlusOnlineQueuedSetupTest.cpp
+  )
+  target_include_directories(ui96-setup-dispatch-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source/Core)
+  target_link_libraries(ui96-setup-dispatch-tests PRIVATE Qt6::Core gtest::gtest)
+  add_test(NAME ui96-setup-dispatch-tests COMMAND ui96-setup-dispatch-tests)
 endif()

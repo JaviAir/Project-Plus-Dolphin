@@ -15,6 +15,7 @@
 
 #include "Common/Lazy.h"
 #include "Core/NetPlayClient.h"
+#include "Core/ProjectPlusOnline/LobbyPresentation.h"
 #include "DolphinQt/GameList/GameListModel.h"
 #include "DolphinQt/NetPlay/ClickBlurLabel.h"
 #include "VideoCommon/OnScreenDisplay.h"
@@ -46,7 +47,14 @@ public:
                          StartGameCallback start_game_callback, QWidget* parent = nullptr);
   ~NetPlayDialog() override;
 
-  void show(std::string nickname, bool use_traversal);
+  void BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt);
+  void InitializeRoom(std::string nickname, bool use_traversal);
+  void ShowAutomatic();
+  void ShowDiagnostics();
+  void SetDiagnosticError(const QString& error);
+  void ReportError(const QString& error);
+  QString SessionError() const;
+  bool HasRoom() const { return m_presentation.Initialized(); }
   void reject() override;
   // GUI-thread Quick Play admission. The ordinary OnStart remains the only host start path.
   void ArmQuickPlayStart(u64 attempt, std::function<bool()> ready);
@@ -69,6 +77,7 @@ public:
   void OnMsgChangeGBARom(int pad, const NetPlay::GBAConfig& config) override;
   void OnMsgStartGame(u32 game_id) override;
   void OnMsgStopGame() override;
+  void OnPersistentBarrier(u32 game, bool release) override;
   void OnMsgPowerButton() override;
   void OnPlayerConnect(const std::string& player) override;
   void OnPlayerDisconnect(const std::string& player) override;
@@ -114,12 +123,18 @@ public:
   void SetHostWiiSyncData(std::vector<u64> titles, std::string redirect_folder) override;
 
 signals:
+  void InGameError(QString error);
   void QuickPlayStartAborted(quint64 attempt);
+  void PersistentStart(quint32 game);
+  void PersistentBarrier(quint32 game, bool release);
   void QuickPlayOpponentConnected(quint64 attempt);
   void HostTraversalChanged(quint64 attempt, QString code, bool failed);
   void Stop();
 
 private:
+  ProjectPlusOnline::LobbyPresentation m_presentation;
+  ProjectPlusOnline::SessionFailureMailbox m_failure;
+  QTextEdit* m_diagnostic_error = nullptr;
   void RefreshGameListSnapshot();
   void CreateChatLayout();
   void CreatePlayersLayout();

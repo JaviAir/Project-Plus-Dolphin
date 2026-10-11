@@ -6,6 +6,11 @@
 #include <thread>
 
 #include <QObject>
+#include <QMetaType>
+
+#include "Core/ProjectPlusOnline/SetupAction.h"
+
+Q_DECLARE_METATYPE(ProjectPlusOnline::SetupCancelRequest)
 
 #include "Common/CommonTypes.h"
 #include "Common/Flag.h"
@@ -21,6 +26,7 @@ public:
   void Start();
   void Stop();
 signals:
+  void CancelPausedQuickPlay(ProjectPlusOnline::SetupCancelRequest request);
   void Open();
   void EjectDisc();
   void ChangeDisc();

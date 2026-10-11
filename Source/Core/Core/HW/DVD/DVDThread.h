@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <map>
 #include <memory>
 #include <optional>
@@ -64,6 +65,8 @@ public:
 
   void SetDisc(std::unique_ptr<DiscIO::Volume> disc);
   bool HasDisc() const;
+  // Read only, with the CPU paused: validate the actual inserted disc for live admission.
+  std::optional<std::array<u8, 20>> GetInsertedDiscSyncHash();
 
   bool HasWiiHashes() const;
   DiscIO::Platform GetDiscType() const;

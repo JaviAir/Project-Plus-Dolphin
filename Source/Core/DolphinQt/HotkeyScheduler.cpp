@@ -25,6 +25,13 @@
 #include "Core/Core.h"
 #include "Core/FreeLookManager.h"
 #include "Core/HotkeyManager.h"
+#include "Core/Host.h"
+#include "Core/HW/GCPad.h"
+#include "Core/HW/SI/SI_Device.h"
+#include "DolphinQt/Host.h"
+#include "InputCommon/InputConfig.h"
+#include "InputCommon/GCPadStatus.h"
+#include "InputCommon/ControllerEmu/ControllerEmu.h"
 #include "Core/IOS/IOS.h"
 #include "Core/State.h"
 #include "Core/System.h"
@@ -75,6 +82,8 @@ static bool IsHotkey(int id, bool held = false)
 
 static void HandleFrameStepHotkeys()
 {
+  if (ProjectPlusOnline::persistent_setup_pause.load())
+    return;
   constexpr int MAX_FRAME_STEP_DELAY = 60;
   constexpr int FRAME_STEP_DELAY = 30;
 
@@ -110,7 +119,13 @@ static void HandleFrameStepHotkeys()
     {
       if (frame_step_count > 0)
         Settings::Instance().SetIsContinuouslyFrameStepping(true);
-      Core::QueueHostJob([](auto& system) { Core::DoFrameStep(system); });
+      Core::QueueHostJob([core = ProjectPlusOnline::presentation_core_generation.load(),
+                          input = ProjectPlusOnline::persistent_input_epoch.load()](auto& system) {
+        if (!ProjectPlusOnline::persistent_setup_pause.load() &&
+            core == ProjectPlusOnline::presentation_core_generation.load() &&
+            input == ProjectPlusOnline::persistent_input_epoch.load())
+          Core::DoFrameStep(system);
+      });
       frame_step_hold = true;
     }
 
@@ -143,6 +158,7 @@ static void HandleFrameStepHotkeys()
 void HotkeyScheduler::Run()
 {
   Common::SetCurrentThreadName("HotkeyScheduler");
+  ProjectPlusOnline::PausedCancelObserver cancel_observer;
 
   while (!m_stop_requested.IsSet())
   {
@@ -155,10 +171,34 @@ void HotkeyScheduler::Run()
     g_controller_interface.SetCurrentInputChannel(ciface::InputChannel::Host);
     g_controller_interface.UpdateInput();
 
+    // Host-channel configured local Controller1, before optional hotkeys and their gate override.
+    const auto now = std::chrono::steady_clock::now();
+    const auto context = ProjectPlusOnline::setup_action.Read(now);
+    Core::System& system = Core::System::GetInstance();
+    Core::UpdateInputGate(true);
+    const bool device_connected = context.enabled && Pad::IsInitialized() && [] {
+      const auto lock = ControllerEmu::EmulatedController::GetStateLock();
+      return Pad::GetConfig()->GetController(0)->IsDefaultDeviceConnected();
+    }();
+    const bool available = context.enabled && device_connected &&
+        Core::GetState(system) == Core::State::Paused &&
+        context.identity.core == ProjectPlusOnline::presentation_core_generation.load() &&
+        context.identity.input == ProjectPlusOnline::persistent_input_epoch.load() &&
+        Host::GetInstance()->GetRenderFocus() && ControlReference::GetInputGate() &&
+        !ProjectPlusOnline::host_ui_input_blocked.load() &&
+        Config::Get(Config::GetInfoForSIDevice(0)) == SerialInterface::SIDEVICE_GC_CONTROLLER;
+    const auto pad = available ? Pad::GetStatus(0) : GCPadStatus{};
+    const bool connected = available && pad.isConnected;
+    ProjectPlusOnline::setup_action.Reader(context, connected, now);
+    if (cancel_observer.Poll(context, connected, (pad.button & PAD_BUTTON_B) != 0, now))
+    {
+      if (auto request = ProjectPlusOnline::setup_action.Queue(context, now))
+        emit CancelPausedQuickPlay(*request);
+    }
+
     if (!HotkeyManagerEmu::IsEnabled())
       continue;
 
-    Core::System& system = Core::System::GetInstance();
     if (Core::GetState(system) != Core::State::Stopping)
     {
       // Obey window focus (config permitting) before checking hotkeys.

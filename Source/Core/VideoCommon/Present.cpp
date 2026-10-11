@@ -3,10 +3,16 @@
 
 #include "VideoCommon/Present.h"
 
+#include <cstdio>
+#include <cstdlib>
+
 #include "Common/ChunkFile.h"
+#include "Common/IOFile.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
+#include "Core/Core.h"
 #include "Core/CoreTiming.h"
+#include "Core/HW/Memmap.h"
 #include "Core/HW/VideoInterface.h"
 #include "Core/Host.h"
 #include "Core/System.h"
@@ -921,12 +927,12 @@ void Presenter::RenderXFBToScreen(const MathUtil::Rectangle<int>& target_rc,
   }
 }
 
-void Presenter::Present(PresentInfo* present_info)
+bool Presenter::Present(PresentInfo* present_info)
 {
   m_present_count++;
 
   if (g_gfx->IsHeadless() || (!m_onscreen_ui && !m_xfb_entry))
-    return;
+    return false;
 
   if (!g_gfx->SupportsUtilityDrawing())
   {
@@ -941,7 +947,7 @@ void Presenter::Present(PresentInfo* present_info)
       // Due to depending on guest state, we need to call this every frame.
       SetSuggestedWindowSize(rect.GetWidth(), rect.GetHeight());
     }
-    return;
+    return false;
   }
 
   // Since we use the common pipelines here and draw vertices if a batch is currently being
@@ -1002,6 +1008,20 @@ void Presenter::Present(PresentInfo* present_info)
     m_onscreen_ui->BeginImGuiFrame(m_backbuffer_width, m_backbuffer_height);
 
   g_gfx->EndUtilityDrawing();
+  return backbuffer_bound;
+}
+
+bool Presenter::RedrawRetainedFrame()
+{
+  auto& system = Core::System::GetInstance();
+  if (!Core::IsCPUThread() || system.IsDualCoreMode() ||
+      Core::GetState(system) != Core::State::Paused || !m_xfb_entry || !m_onscreen_ui ||
+      !m_onscreen_ui->IsReady() || g_gfx->IsHeadless() || !g_gfx->SupportsUtilityDrawing())
+    return false;
+  const bool presented = Present(nullptr);
+  if (presented)
+    g_gfx->WaitForGPUIdle();
+  return presented;
 }
 
 TimePoint Presenter::GetUpdatedPresentationTime(TimePoint intended_presentation_time)
@@ -1056,6 +1076,39 @@ void Presenter::SetMousePress(u32 button_mask)
     m_onscreen_ui->SetMousePress(button_mask);
 }
 
+// Temporary Phase 9.1 observation only: no cache lookup, flush, or normalization.
+void Presenter::ResearchXFBProbe(const char* phase) const
+{
+  const char* directory = std::getenv("PPLUS_PHASE91_DIR");
+  if (!directory || !*directory)
+    return;
+
+  const size_t size = static_cast<size_t>(m_last_xfb_stride) * m_last_xfb_height;
+  const u8* ram = size ? Core::System::GetInstance().GetMemory().GetPointerForRange(
+                            m_last_xfb_addr, size) : nullptr;
+  const std::string path = fmt::format("{}/xfb-{}.ram", directory, phase);
+  File::IOFile output(path, "wb");
+  const bool ok = ram && output.WriteBytes(ram, size) && output.Close();
+  std::fprintf(stderr, "Phase 9.1 XFB %s: addr=%08x width=%u stride=%u height=%u bytes=%zu dump=%s\n",
+               phase, m_last_xfb_addr, m_last_xfb_width, m_last_xfb_stride, m_last_xfb_height,
+               size, ok ? "OK" : "FAILED");
+  // Before redraw this may still be the previous presented entry; log its address explicitly.
+  if (m_xfb_entry)
+  {
+    std::fprintf(stderr,
+                 "  presented_entry addr=%08x id=%llu hash=%016llx xfb_copy=%d container=%d frame=%d\n",
+                 m_xfb_entry->addr, static_cast<unsigned long long>(m_xfb_entry->id),
+                 static_cast<unsigned long long>(m_xfb_entry->hash),
+                 static_cast<int>(m_xfb_entry->is_xfb_copy),
+                 static_cast<int>(m_xfb_entry->is_xfb_container), m_xfb_entry->frameCount);
+  }
+  else
+  {
+    std::fprintf(stderr, "  presented_entry none\n");
+  }
+  std::fflush(stderr);
+}
+
 void Presenter::DoState(PointerWrap& p)
 {
   p.Do(m_frame_count);
@@ -1065,19 +1118,31 @@ void Presenter::DoState(PointerWrap& p)
   p.Do(m_last_xfb_stride);
   p.Do(m_last_xfb_height);
 
-  // If we're loading and there is a last XFB, re-display it.
+  // Preserve the ordinary load path unless this research experiment is enabled.
   if (p.IsReadMode() && m_last_xfb_stride != 0)
   {
-    // This technically counts as the end of the frame
-    GetVideoEvents().after_frame_event.Trigger(Core::System::GetInstance());
-
-    m_next_swap_estimated_ticks = m_last_xfb_ticks;
-    m_next_swap_estimated_time = Clock::now();
-
-    m_immediate_swap_happened_this_field.store(false, std::memory_order_relaxed);
-
-    ImmediateSwap(m_last_xfb_addr, m_last_xfb_width, m_last_xfb_stride, m_last_xfb_height);
+    if (std::getenv("PPLUS_PHASE91_DEFER_XFB"))
+      ResearchXFBProbe("deferred-at-video-restore");
+    else
+      ResearchRedrawAfterStateLoad();
   }
+}
+
+void Presenter::ResearchRedrawAfterStateLoad()
+{
+  if (m_last_xfb_stride == 0)
+    return;
+
+  // Same restore-time side effects, moved together after full machine restore
+  // only when the temporary experiment flag is present.
+  GetVideoEvents().after_frame_event.Trigger(Core::System::GetInstance());
+  m_next_swap_estimated_ticks = m_last_xfb_ticks;
+  m_next_swap_estimated_time = Clock::now();
+  m_immediate_swap_happened_this_field.store(false, std::memory_order_relaxed);
+
+  ResearchXFBProbe("before-redraw");
+  ImmediateSwap(m_last_xfb_addr, m_last_xfb_width, m_last_xfb_stride, m_last_xfb_height);
+  ResearchXFBProbe("after-redraw");
 }
 
 }  // namespace VideoCommon

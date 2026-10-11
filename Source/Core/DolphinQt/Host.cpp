@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "DolphinQt/Host.h"
+#include "Core/ProjectPlusOnline/SetupAction.h"
 
 #include <functional>
 
@@ -137,6 +138,8 @@ bool Host::GetRenderFullFocus()
 void Host::SetRenderFocus(bool focus)
 {
   m_render_focus = focus;
+  if (!focus)
+    ProjectPlusOnline::setup_action.Invalidate();
   if (g_gfx && m_render_fullscreen && g_ActiveConfig.ExclusiveFullscreenEnabled())
   {
     RunWithGPUThreadInactive([focus] {
