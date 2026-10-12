@@ -206,6 +206,15 @@ static WindowSystemType GetWindowSystemType()
   return WindowSystemType::Headless;
 }
 
+// Persistent Quick Play (same-Core handoff) is supported on X11, including XWayland,
+// and on Windows. The OpenGL, single-core and separate render window requirements
+// are checked separately.
+static bool IsQuickPlayWindowSystem()
+{
+  const QString platform_name = QGuiApplication::platformName();
+  return platform_name == QStringLiteral("xcb") || platform_name == QStringLiteral("windows");
+}
+
 static WindowSystemInfo GetWindowSystemInfo(QWindow* window)
 {
   WindowSystemInfo wsi;
@@ -1879,7 +1888,7 @@ void MainWindow::ReportQuickPlayError(const QString& error)
   PublishQuickPlayStatus();
   const bool renderer_route = Core::IsRunning(m_system) && !m_system.IsDualCoreMode() &&
                               PersistentQuickPlaySession::IsConfigured() &&
-                              QGuiApplication::platformName() == QStringLiteral("xcb") &&
+                              IsQuickPlayWindowSystem() &&
                               !m_rendering_to_main && m_render_widget->isVisible() &&
                               Config::Get(Config::MAIN_GFX_BACKEND) == "OGL";
   if (m_quickplay_entry == ProjectPlusOnline::EntrySource::InGame && !error.isEmpty() &&
@@ -1943,7 +1952,7 @@ void MainWindow::PrepareQuickPlayConnection(u64 attempt, bool host)
     const bool supported =
         !m_persistent_quickplay ||
         (IsPersistentQuickPlayBoundary() && !m_system.IsDualCoreMode() &&
-         QGuiApplication::platformName() == QStringLiteral("xcb") && !m_rendering_to_main &&
+         IsQuickPlayWindowSystem() && !m_rendering_to_main &&
          m_render_widget->isVisible() && Config::Get(Config::MAIN_GFX_BACKEND) == "OGL");
     const QString error = painted && dispatchable && supported ?
                               QString{} :
@@ -2016,7 +2025,7 @@ void MainWindow::PublishQuickPlayPresentation()
   const bool supported = Core::IsRunning(m_system) && PersistentQuickPlaySession::IsConfigured() &&
                          Config::Get(Config::MAIN_GFX_BACKEND) == "OGL";
   const bool eligible = local_css.Read().IsFresh(core, input, std::chrono::steady_clock::now()) &&
-                        QGuiApplication::platformName() == QStringLiteral("xcb") &&
+                        IsQuickPlayWindowSystem() &&
                         !m_rendering_to_main && m_render_widget->isVisible() && !client &&
                         !Settings::Instance().GetNetPlayServer();
   const auto state = m_quickplay_controller ? m_quickplay_controller->GetState() : State::Idle;
@@ -2031,7 +2040,7 @@ void MainWindow::PublishQuickPlayPresentation()
       m_quickplay_controller->GetGuestCancelAttempt() == value.identity.attempt &&
       guest_cancel_attempt.load() == value.identity.attempt &&
       (!lobby || (lobby->connected && lobby->current_game == value.identity.game)) && supported &&
-      QGuiApplication::platformName() == QStringLiteral("xcb") && !m_rendering_to_main &&
+      IsQuickPlayWindowSystem() && !m_rendering_to_main &&
       m_render_widget->isVisible() && !m_exit_requested && !m_pending_boot &&
       !m_stop_confirm_showing && !QApplication::activeModalWidget() && !m_quickplay_validating &&
       !m_quickplay_blocking_connection && m_quickplay_recovery == QuickPlayRecovery::None;
@@ -2040,7 +2049,7 @@ void MainWindow::PublishQuickPlayPresentation()
   // joined: paused setup, shared CSS, stage select, gameplay and results.
   const bool leave_action_enabled =
       OwnsInGameQuickPlay() && lobby && lobby->connected && lobby->players.size() >= 2 &&
-      supported && QGuiApplication::platformName() == QStringLiteral("xcb") && !m_rendering_to_main &&
+      supported && IsQuickPlayWindowSystem() && !m_rendering_to_main &&
       m_render_widget->isVisible() && !m_exit_requested && !m_pending_boot &&
       !m_stop_confirm_showing && !QApplication::activeModalWidget() && !m_quickplay_validating &&
       !m_quickplay_blocking_connection && m_quickplay_recovery == QuickPlayRecovery::None &&
@@ -2252,12 +2261,12 @@ void MainWindow::RedrawQuickPlayPresentation(std::function<void(bool)> finished)
 
 void MainWindow::ValidateQuickPlayContent(u64 attempt, std::function<void(bool, QString)> finished)
 {
-  if (m_system.IsDualCoreMode() || QGuiApplication::platformName() != QStringLiteral("xcb") ||
+  if (m_system.IsDualCoreMode() || !IsQuickPlayWindowSystem() ||
       m_rendering_to_main || !m_render_widget->isVisible() ||
       Config::Get(Config::MAIN_GFX_BACKEND) != "OGL")
   {
-    finished(false, tr("Quick Play requires the supported external XCB/OpenGL "
-                       "single-core window."));
+    finished(false, tr("Quick Play requires single-core mode and OpenGL in a separate "
+                       "render window."));
     return;
   }
   const auto previous = Core::GetState(m_system);
@@ -2512,11 +2521,11 @@ void MainWindow::PrepareQuickPlayHandoff(u64 attempt)
     return;
   }
   if (state != Core::State::Uninitialized &&
-      (QGuiApplication::platformName() != QStringLiteral("xcb") || m_rendering_to_main ||
+      (!IsQuickPlayWindowSystem() || m_rendering_to_main ||
        !m_render_widget->isVisible() || Config::Get(Config::MAIN_GFX_BACKEND) != "OGL"))
   {
     m_quickplay_controller->OnCoreStopped(
-        attempt, tr("In-game Quick Play currently requires an external window with XCB/OpenGL."));
+        attempt, tr("In-game Quick Play requires OpenGL in a separate render window."));
     return;
   }
   ProjectPlusOnline::presentation.Invalidate();

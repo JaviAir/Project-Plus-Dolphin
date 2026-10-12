@@ -7,7 +7,8 @@ ordinary desktop/conventional NetPlay retains its boot/stop lifecycle.
 
 ## Supported bundle
 
-The running local game must use the validated external XCB/OpenGL window,
+The running local game must use an external OpenGL render window on X11
+(including XWayland) or Windows (Windows is not yet runtime-tested),
 single-core RSBE01, DSP HLE, read-only SD, standard GC controllers on guest ports
 1/2 (local port 1 may be driven by a GameCube Adapter for Wii U port; see Local
 controller below), no other SI/EXI peripherals, movies, Bluetooth passthrough, save/code sync,

@@ -39,7 +39,7 @@
       <AdditionalIncludeDirectories>$(ProjectDir)TAS;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <AdditionalIncludeDirectories>$(ProjectDir)VideoInterface;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <!--Qt 6.3.0 headers use std::aligned_storage instead of alignas-->
-      <PreprocessorDefinitions>_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING;CURL_STATICLIB;SHOW_UPDATER;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <PreprocessorDefinitions>_SILENCE_CXX23_ALIGNED_STORAGE_DEPRECATION_WARNING;CURL_STATICLIB;SHOW_UPDATER;QUICKPLAY_NO_BULK_SCAN_TRIAL;%(PreprocessorDefinitions)</PreprocessorDefinitions>
       <!--Jump through some hoops to generate a pch file local to this project-->
       <AdditionalIncludeDirectories>$(SourceDir)PCH;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
       <PrecompiledHeader>Use</PrecompiledHeader>
@@ -197,6 +197,7 @@
     <ClCompile Include="ProjectPlus/DownloadWorker.cpp" />
     <ClCompile Include="ProjectPlus/InstallUpdateDialog.cpp" />
     <ClCompile Include="ProjectPlus/UpdateDialog.cpp" />
+    <ClCompile Include="QuickPlay\PersistentSession.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayClient.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayController.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayDialog.cpp" />
@@ -284,6 +285,8 @@
     <QtMoc Include="Config\PatchesWidget.h" />
     <ClInclude Include="Debugger\RegisterColumn.h" />
     <ClInclude Include="GBAHost.h" />
+    <ClInclude Include="QuickPlay\ContentPolicy.h" />
+    <ClInclude Include="QuickPlay\PersistentSession.h" />
     <ClInclude Include="QuickPlay\QuickPlayClient.h" />
     <ClInclude Include="QuickPlay\QuickPlayLauncher.h" />
     <ClInclude Include="QtUtils\ActionHelper.h" />

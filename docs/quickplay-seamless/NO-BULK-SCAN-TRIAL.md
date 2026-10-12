@@ -6,9 +6,11 @@ Build, test and runtime status at hand-off: **NOT RUN**.
 
 ## Selection
 
-The ordinary CMake option `QUICKPLAY_NO_BULK_SCAN_TRIAL` (default `OFF`) defines
-`QUICKPLAY_NO_BULK_SCAN_TRIAL` for `project-plus-dolphin` only. Without it the
-strict validator, prepaint and "Checking game files" stage are unchanged.
+The CMake option `QUICKPLAY_NO_BULK_SCAN_TRIAL` defines
+`QUICKPLAY_NO_BULK_SCAN_TRIAL` for `project-plus-dolphin` only. It is `ON` by default
+on `seamless-session-cross-platform` (it was `OFF` on `qp-seamless-scan`), and
+`DolphinQt.vcxproj` defines it for Windows builds. Configure with `OFF` to get the
+strict validator, prepaint and "Checking game files" stage back.
 `QuickPlayContent::SelectedPolicy()` is a compile-time constant; each
 `PersistentQuickPlaySession` copies it at construction, so the policy cannot
 change during a handoff. A trial build writes `qp-trial-policy.txt`
@@ -21,7 +23,7 @@ Retained: Core running, single-core, DSP HLE, read-only SD, no movie/Bluetooth
 passthrough, fixed-delay NetPlay without save/code sync, recording or
 spectators, game ID RSBE01, empty EXI slots, GC controllers on SI 1/2 (local
 port 1 may be a Wii U adapter port driving the standard controller) and none
-on 3/4, the XCB/OpenGL external-window route, schema 1, the pinned declared
+on 3/4, the external OpenGL window route (X11/XWayland or Windows), schema 1, the pinned declared
 checkpoint identity, effective NetPlay configuration identity, well-formed
 64-hex declarations for all eight keys, required file/directory existence,
 readability and open, CSS eligibility, Core/input/room/window fences, readiness,

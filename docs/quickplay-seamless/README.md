@@ -42,10 +42,13 @@ and lists the relevant source paths and workspace evidence locations.
 
 ## Trial implementation
 
-`qp-seamless-scan` implements Option A behind the off-by-default CMake option
+`qp-seamless-scan` implements Option A behind the CMake option
 `QUICKPLAY_NO_BULK_SCAN_TRIAL`; see [NO-BULK-SCAN-TRIAL.md](NO-BULK-SCAN-TRIAL.md).
-Strict validation remains the default. Build/test/runtime status: NOT RUN.
+User-operated Linux happy paths passed on 2026-10-11; unit tests were not run.
+On `seamless-session-cross-platform` the no-scan policy is the default, and Windows
+support is in progress; see [WINDOWS.md](WINDOWS.md).
 
 UI96 Step3 makes local commands controller-agnostic (mapped Standard Controller
 or a GameCube Adapter for Wii U port) under both policies; see
-`Source/Core/DolphinQt/QuickPlay/PERSISTENT.md`. Build/test/runtime status: NOT RUN.
+`Source/Core/DolphinQt/QuickPlay/PERSISTENT.md`. User-operated Linux checks passed;
+unit tests were not run.

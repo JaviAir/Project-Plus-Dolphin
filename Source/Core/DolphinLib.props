@@ -298,8 +298,13 @@
     <ClInclude Include="Core\HW\EXI\EXI_DeviceEthernet.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceGecko.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceProjectPlusOnline.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\Chord.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\LobbyPresentation.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\LocalCSS.h" />
     <ClInclude Include="Core\ProjectPlusOnline\LocalInput.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\Presentation.h" />
     <ClInclude Include="Core\ProjectPlusOnline\Protocol.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\SetupAction.h" />
     <ClInclude Include="Core\ProjectPlusOnline\Status.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceIPL.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceMemoryCard.h" />

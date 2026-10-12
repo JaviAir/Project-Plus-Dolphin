@@ -103,6 +103,24 @@ QByteArray HashTree(const QString& root, bool nand = false)
   }
   return hash.result().toHex();
 }
+// Names what differs from the bundle, so another machine or platform can be set up to match.
+void LogManifestMismatch(const QJsonObject& json, const QString& build, const QString& config)
+{
+  ERROR_LOG_FMT(NETPLAY,
+                "Persistent QuickPlay: bundle schema {} build {} checkpoint {}; running build {}",
+                json[QStringLiteral("schema")].toDouble(),
+                json[QStringLiteral("build")].toString().toStdString(),
+                json[QStringLiteral("checkpoint")].toString().toStdString(), build.toStdString());
+  const auto declared =
+      json[QStringLiteral("config")].toString().split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+  const auto running = config.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+  for (const auto& line : declared)
+    if (!running.contains(line))
+      ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: bundle expects {}", line.toStdString());
+  for (const auto& line : running)
+    if (!declared.contains(line))
+      ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: running config has {}", line.toStdString());
+}
 }  // namespace
 
 bool PersistentQuickPlaySession::IsConfigured()
@@ -162,9 +180,12 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
   if (!QuickPlayContent::ReadManifest(BundlePath() + QStringLiteral("common-css.json"), &json))
     return fail(QStringLiteral("Install a readable, supported QuickPlay/common-css bundle first."));
   const auto build = QString::fromStdString(Common::GetScmRevGitStr() + "-persistent1");
-  if (!QuickPlayContent::CompatibleManifest(
-          json, m_policy, build, QString::fromStdString(ConfigLoaders::RunningNetPlayConfigIdentity())))
+  const auto config = QString::fromStdString(ConfigLoaders::RunningNetPlayConfigIdentity());
+  if (!QuickPlayContent::CompatibleManifest(json, m_policy, build, config))
+  {
+    LogManifestMismatch(json, build, config);
     return fail(QStringLiteral("The CSS bundle build or effective configuration is incompatible."));
+  }
   m_checkpoint = BundlePath() + QStringLiteral("common-css.sav");
   const auto launchers = QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX));
   const QuickPlayContent::Paths paths{
