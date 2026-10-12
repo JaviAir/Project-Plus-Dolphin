@@ -1,6 +1,7 @@
 add_dolphin_test(ProjectPlusOnlineProtocolTest ProjectPlusOnlineProtocolTest.cpp)
 add_dolphin_test(ProjectPlusOnlinePresentationTest ProjectPlusOnlinePresentationTest.cpp)
 add_dolphin_test(ProjectPlusOnlineSetupActionTest ProjectPlusOnlineSetupActionTest.cpp)
+add_dolphin_test(ProjectPlusOnlineLocalInputTest ProjectPlusOnlineLocalInputTest.cpp)
 add_dolphin_test(MMIOTest MMIOTest.cpp)
 add_dolphin_test(PageFaultTest PageFaultTest.cpp)
 add_dolphin_test(CoreTimingTest CoreTimingTest.cpp)

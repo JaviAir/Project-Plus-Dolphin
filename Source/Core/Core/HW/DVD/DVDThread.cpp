@@ -26,6 +26,7 @@
 #include "Core/IOS/ES/Formats.h"
 #include "Core/System.h"
 
+#include "DiscIO/Blob.h"
 #include "DiscIO/Enums.h"
 #include "DiscIO/Volume.h"
 
@@ -117,6 +118,18 @@ std::optional<std::array<u8, 20>> DVDThread::GetInsertedDiscSyncHash()
     return std::nullopt;
   WaitUntilIdle();
   return m_disc->GetSyncHash();
+}
+
+std::optional<std::array<u8, 0x20>> DVDThread::GetInsertedDiscHeader()
+{
+  if (!m_disc || m_disc->GetVolumeType() != DiscIO::Platform::WiiDisc ||
+      m_disc->GetBlobType() != DiscIO::BlobType::PLAIN)
+    return std::nullopt;
+  WaitUntilIdle();
+  std::array<u8, 0x20> header{};
+  if (!m_disc->Read(0, header.size(), header.data(), DiscIO::PARTITION_NONE))
+    return std::nullopt;
+  return header;
 }
 
 bool DVDThread::HasWiiHashes() const

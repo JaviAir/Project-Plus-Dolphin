@@ -11,6 +11,7 @@
 #include "Core/Core.h"
 #include "Core/HW/GCPad.h"
 #include "Core/NetPlayProto.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/System.h"
 #include "InputCommon/GCAdapter.h"
 
@@ -37,6 +38,8 @@ GCPadStatus CSIDevice_GCAdapter::GetPadStatus()
   if (!NetPlay::IsNetPlayRunning())
   {
     pad_status = GCAdapter::Input(m_device_number);
+    if (m_device_number == 0)
+      ProcessLocalCommands(pad_status, ProjectPlusOnline::LocalPadSource::WiiUAdapter);
   }
 
   HandleMoviePadStatus(m_system.GetMovie(), m_device_number, &pad_status);

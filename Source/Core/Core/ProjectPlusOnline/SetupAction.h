@@ -4,6 +4,7 @@
 
 #include <utility>
 
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
 
 namespace ProjectPlusOnline
@@ -103,6 +104,8 @@ private:
   std::uint64_t m_pending = 0, m_ticket = 0, m_reader_epoch = 0;
 };
 inline SetupActionMailbox setup_action;
+// Same authority/freshness rules for the session leave chord; the request type is shared.
+inline SetupActionMailbox leave_action;
 inline std::atomic<bool> host_ui_input_blocked{false};
 // Ownership of a frontend pause survives temporary removal of cancellation availability.
 inline std::atomic<bool> persistent_setup_pause{false};
@@ -111,16 +114,20 @@ class PausedCancelObserver
 {
 public:
   bool Poll(SetupActionContext context, bool available, bool b,
-            std::chrono::steady_clock::time_point now)
+            std::chrono::steady_clock::time_point now,
+            LocalPadSource source = LocalPadSource::Mapped)
   {
     if (!available || !context.enabled)
     {
       *this = {};
       return false;
     }
-    if (context != m_context || now < m_sampled || now - m_sampled > std::chrono::milliseconds(250))
+    // A held B on a newly selected local source is not a fresh press either.
+    if (context != m_context || source != m_source || now < m_sampled ||
+        now - m_sampled > std::chrono::milliseconds(250))
       m_armed = false;
     m_context = context;
+    m_source = source;
     m_sampled = now;
     if (!b)
       m_armed = true;
@@ -132,7 +139,35 @@ public:
 private:
   SetupActionContext m_context;
   std::chrono::steady_clock::time_point m_sampled{};
+  LocalPadSource m_source = LocalPadSource::Mapped;
   bool m_armed = false;
+};
+
+// Host-thread leave recognition on local controller 1. A context or source change
+// requires a fresh release, so a chord held across join/retirement never leaves.
+class SessionLeaveObserver
+{
+public:
+  bool Poll(SetupActionContext context, bool available, std::uint16_t buttons,
+            std::chrono::steady_clock::time_point now,
+            LocalPadSource source = LocalPadSource::Mapped)
+  {
+    if (!available || !context.enabled)
+    {
+      *this = {};
+      return false;
+    }
+    if (context != m_context || source != m_source)
+      m_chord = {};
+    m_context = context;
+    m_source = source;
+    return m_chord.Poll(true, buttons, now);
+  }
+
+private:
+  SetupActionContext m_context;
+  LocalPadSource m_source = LocalPadSource::Mapped;
+  LeaveChord m_chord;
 };
 
 // Only the independent local SI branch consumes this. Never shared NetPlay pads.

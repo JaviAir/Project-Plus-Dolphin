@@ -17,6 +17,7 @@
 #include "Core/NetPlayClient.h"
 #include "Core/ProjectPlusOnline/LobbyPresentation.h"
 #include "DolphinQt/GameList/GameListModel.h"
+#include "DolphinQt/QuickPlay/ContentPolicy.h"
 #include "DolphinQt/NetPlay/ClickBlurLabel.h"
 #include "VideoCommon/OnScreenDisplay.h"
 
@@ -47,7 +48,8 @@ public:
                          StartGameCallback start_game_callback, QWidget* parent = nullptr);
   ~NetPlayDialog() override;
 
-  void BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt);
+  void BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt,
+                    std::optional<QuickPlayContent::TrialLauncher> trial_launcher = std::nullopt);
   void InitializeRoom(std::string nickname, bool use_traversal);
   void ShowAutomatic();
   void ShowDiagnostics();
@@ -221,6 +223,7 @@ private:
   StartGameCallback m_start_game_callback;
   using GameListSnapshot = std::vector<std::shared_ptr<const UICommon::GameFile>>;
   std::atomic<std::shared_ptr<const GameListSnapshot>> m_game_list_snapshot;
+  std::atomic<std::shared_ptr<const QuickPlayContent::TrialLauncher>> m_trial_launcher;
   std::atomic<bool> m_quickplay_setup_active{false};
   std::atomic<u64> m_session_generation{0};
   u64 m_quickplay_attempt = 0;

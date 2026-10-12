@@ -20,6 +20,7 @@
 #include "Core/Config/SessionSettings.h"
 #include "Core/HW/EXI/EXI.h"
 #include "Core/NetPlayProto.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 
 namespace ConfigLoaders
 {
@@ -360,7 +361,15 @@ std::string RunningNetPlayConfigIdentity()
   for (const auto& setting : Config::SYSCONF_SETTINGS)
     std::visit([&](auto* info) { check(*info, "SYSCONF"); }, setting.config_info);
   for (int port = 0; port < 4; ++port)
-    check(Config::GetInfoForSIDevice(port), "SI device");
+  {
+    // Record the device the guest sees. A Wii U adapter on local port 1 drives a
+    // restored standard controller (see ProjectPlusOnline::ContractSIDevice), so
+    // it shares the standard identity; every other configured device is literal.
+    const auto& info = Config::GetInfoForSIDevice(port);
+    Config::Layer values(Config::LayerType::CurrentRun);
+    values.Set(info, ProjectPlusOnline::ContractSIDevice(port, Config::Get(info)));
+    result += std::string("SI device") + "=" + *values.Get<std::string>(info.GetLocation()) + "\n";
+  }
   check(Config::MAIN_DSP_THREAD, "DSPThread");
   check(Config::MAIN_CUSTOM_RTC_ENABLE, "CustomRTCEnable");
   check(Config::MAIN_CUSTOM_RTC_VALUE, "CustomRTCValue");

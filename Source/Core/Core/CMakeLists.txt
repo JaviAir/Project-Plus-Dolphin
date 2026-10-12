@@ -214,6 +214,8 @@ add_library(core
   HW/EXI/EXI_DeviceGecko.h
   HW/EXI/EXI_DeviceProjectPlusOnline.cpp
   HW/EXI/EXI_DeviceProjectPlusOnline.h
+  ProjectPlusOnline/LocalInput.cpp
+  ProjectPlusOnline/LocalInput.h
   ProjectPlusOnline/Protocol.h
   ProjectPlusOnline/Status.h
   HW/EXI/EXI_DeviceIPL.cpp

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 
 #include "Core/NetPlayClient.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
 
 #include <algorithm>
@@ -2137,7 +2138,8 @@ void NetPlayClient::UpdateDevices()
   auto& si = Core::System::GetInstance().GetSerialInterface();
   for (auto player_id : m_pad_map)
   {
-    const SerialInterface::SIDevices si_device = Config::Get(Config::GetInfoForSIDevice(local_pad));
+    const SerialInterface::SIDevices configured_device =
+        Config::Get(Config::GetInfoForSIDevice(local_pad));
 
     if (m_gba_config[pad].enabled && player_id > 0)
     {
@@ -2145,6 +2147,11 @@ void NetPlayClient::UpdateDevices()
     }
     else if (player_id == m_local_player->pid)
     {
+      // A persistent session keeps the restored contract device: a local Wii U
+      // adapter port stays an input source (PollLocalPad), never a device swap.
+      const SerialInterface::SIDevices si_device =
+          m_persistent_session ? ProjectPlusOnline::ContractSIDevice(local_pad, configured_device) :
+                                 configured_device;
       // Use local controller types for local controllers if they are compatible
       if (SerialInterface::SIDevice_IsGCController(si_device))
       {
@@ -2163,7 +2170,7 @@ void NetPlayClient::UpdateDevices()
     }
     else if (player_id > 0)
     {
-      if (si_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
+      if (configured_device != SerialInterface::SIDEVICE_AM_BASEBOARD)
         si.ChangeDevice(SerialInterface::SIDEVICE_GC_CONTROLLER, pad);
     }
     else
@@ -2471,14 +2478,10 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
   {
     pad_status = Pad::GetGBAStatus(local_pad);
   }
-  else if (Config::Get(Config::GetInfoForSIDevice(local_pad)) ==
-           SerialInterface::SIDEVICE_WIIU_ADAPTER)
-  {
-    pad_status = GCAdapter::Input(local_pad);
-  }
   else
   {
-    pad_status = Pad::GetStatus(local_pad);
+    // Same rule as local commands: mapped Standard Controller or Wii U adapter port.
+    pad_status = ProjectPlusOnline::SampleLocalPad(local_pad);
   }
 
   if (m_host_input_authority)

@@ -421,6 +421,8 @@ void NetPlayDialog::ConnectWidgets()
   connect(m_spectator_mode, &QCheckBox::toggled, this, &NetPlayDialog::IsSpectatorEnabled);
 
   connect(m_game_button, &QPushButton::clicked, [this] {
+    if (m_trial_launcher.load())
+      return;  // The admitted persistent trial owns its declared launcher.
     GameListDialog gld(m_game_list_model, this);
     if (gld.exec() == QDialog::Accepted)
     {
@@ -556,6 +558,7 @@ void NetPlayDialog::ResetSession()
   g_netplay_chat_ui.store(nullptr);
   g_netplay_golf_ui.reset();
   ++m_session_generation;
+  m_trial_launcher.store(nullptr);
   m_presentation.Reset();
   m_got_stop_request = true;
   m_started_game.reset();
@@ -590,9 +593,12 @@ bool NetPlayDialog::IsQuickPlayReady()
   }
   const auto launcher = FindPPlusNetplayLauncher(m_game_list_model);
   const auto selected = FindGameFile(lobby.game);
+  const auto trial = m_trial_launcher.load();
+  const bool identity_matches = trial ? trial->identity == m_current_game_identifier :
+      launcher.game && launcher.game->CompareSyncIdentifier(m_current_game_identifier) ==
+                           NetPlay::SyncIdentifierComparison::SameGame;
   return launcher.game && selected && launcher.game->GetFilePath() == selected->GetFilePath() &&
-         launcher.game->CompareSyncIdentifier(m_current_game_identifier) ==
-             NetPlay::SyncIdentifierComparison::SameGame &&
+         identity_matches &&
          (IsHosting() ? lobby.local_player == 1 : lobby.local_player == pads[1]);
 }
 
@@ -664,10 +670,13 @@ void NetPlayDialog::reject()
   }
 }
 
-void NetPlayDialog::BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt)
+void NetPlayDialog::BeginSession(ProjectPlusOnline::EntrySource entry, bool persistent, u64 attempt,
+                                std::optional<QuickPlayContent::TrialLauncher> trial_launcher)
 {
   ResetSession();
   m_presentation.Begin(entry, persistent, attempt);
+  if (persistent && attempt && trial_launcher)
+    m_trial_launcher.store(std::make_shared<const QuickPlayContent::TrialLauncher>(*trial_launcher));
   m_failure.Begin(m_session_generation.load());
 }
 
@@ -731,6 +740,9 @@ void NetPlayDialog::InitializeRoom(std::string nickname, bool use_traversal)
 
   m_room_box->clear();
   m_chat_edit->clear();
+  if (m_trial_launcher.load())
+    m_chat_edit->append(QStringLiteral("Declared bundle accepted; content verification skipped. "
+                                      "Policy: quickplay-declared-bundle-trial-v1."));
   m_chat_type_edit->clear();
 
   const bool is_hosting = Settings::Instance().GetNetPlayServer() != nullptr;
@@ -1442,6 +1454,21 @@ NetPlayDialog::FindGameFile(const NetPlay::SyncIdentifier& sync_identifier,
     found = &temp;
   *found = NetPlay::SyncIdentifierComparison::DifferentGame;
   const auto games = m_game_list_snapshot.load();
+  if (const auto trial = m_trial_launcher.load())
+  {
+    // Owned persistent trial only: lookup compares copied metadata/declarations.
+    // Never fall through to GameFile's full launcher hash or disc partition hash.
+    for (const auto& file : *games)
+      if (file->GetFilePath() == trial->path && file->IsValid() &&
+          file->GetGameID() == trial->identity.game_id &&
+          file->GetFileSize() == trial->identity.dol_elf_size)
+      {
+        *found = trial->identity == sync_identifier ? NetPlay::SyncIdentifierComparison::SameGame :
+                                                    NetPlay::SyncIdentifierComparison::DifferentHash;
+        return *found == NetPlay::SyncIdentifierComparison::SameGame ? file : nullptr;
+      }
+    return nullptr;
+  }
   for (const auto& file : *games)
   {
     *found = std::min(*found, file->CompareSyncIdentifier(sync_identifier));

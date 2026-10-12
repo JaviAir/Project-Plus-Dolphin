@@ -353,6 +353,7 @@ private:
   const NetPlay::NetPlayServer* m_persistent_server = nullptr;
   ProjectPlusOnline::EntrySource m_quickplay_entry = ProjectPlusOnline::EntrySource::Desktop;
   u64 m_quickplay_owned_attempt = 0;
+  bool m_quickplay_leave_enabled_logged = false;
   u64 m_quickplay_owner_core = 0;
   bool m_quickplay_validation_was_running = false;
   std::optional<ProjectPlusOnline::PrepaintFence> m_quickplay_validation_fence;
@@ -364,6 +365,11 @@ private:
   QString m_quickplay_admission_error;
   std::vector<std::function<void(bool)>> m_quickplay_redraw_callbacks;
   std::chrono::steady_clock::time_point m_quickplay_cancelled_until{};
+  // Set by an accepted local leave chord: Leaving… during retirement, then Left session.
+  std::chrono::steady_clock::time_point m_quickplay_left_until{};
+  // The opponent ended the shared session: shown while retiring, then on the restored CSS.
+  bool m_quickplay_opponent_left = false;
+  std::chrono::steady_clock::time_point m_quickplay_opponent_left_until{};
   enum class QuickPlayPresentation
   {
     None,

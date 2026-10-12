@@ -298,6 +298,7 @@ add_executable(project-plus-dolphin
   ProjectPlus/InstallUpdateDialog.h
   ProjectPlus/UpdateDialog.cpp
   ProjectPlus/UpdateDialog.h
+  QuickPlay/ContentPolicy.h
   QuickPlay/PersistentSession.cpp
   QuickPlay/PersistentSession.h
   QuickPlay/QuickPlayClient.cpp
@@ -751,4 +752,34 @@ if(ENABLE_TESTS)
   target_include_directories(ui96-setup-dispatch-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source/Core)
   target_link_libraries(ui96-setup-dispatch-tests PRIVATE Qt6::Core gtest::gtest)
   add_test(NAME ui96-setup-dispatch-tests COMMAND ui96-setup-dispatch-tests)
+endif()
+
+if(QUICKPLAY_NO_BULK_SCAN_TRIAL)
+  target_compile_definitions(project-plus-dolphin PRIVATE QUICKPLAY_NO_BULK_SCAN_TRIAL)
+  # Launcher provenance comes from a successful manual link, not an agent report.
+  file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/qp-trial-policy.txt"
+    CONTENT "quickplay-declared-bundle-trial-v1\n")
+  add_custom_command(TARGET project-plus-dolphin POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy
+      "${CMAKE_CURRENT_BINARY_DIR}/qp-trial-policy.txt"
+      "$<TARGET_FILE_DIR:project-plus-dolphin>/qp-trial-policy.txt"
+  )
+endif()
+
+if(ENABLE_TESTS)
+  # Compile selection in both modes, regardless of the candidate's policy.
+  foreach(policy IN ITEMS strict trial)
+    add_executable(qp-content-policy-${policy}-tests EXCLUDE_FROM_ALL
+      ../../UnitTests/Core/QuickPlayContentPolicyTest.cpp
+    )
+    target_include_directories(qp-content-policy-${policy}-tests PRIVATE ${CMAKE_SOURCE_DIR}/Source/Core)
+    target_link_libraries(qp-content-policy-${policy}-tests PRIVATE Qt6::Core gtest::gtest)
+    # Same Qt string definitions as project-plus-dolphin, so the header is checked as built there.
+    target_compile_definitions(qp-content-policy-${policy}-tests PRIVATE
+      QT_USE_QSTRINGBUILDER QT_NO_CAST_FROM_ASCII QT_NO_CAST_TO_ASCII)
+    if(policy STREQUAL "trial")
+      target_compile_definitions(qp-content-policy-${policy}-tests PRIVATE QUICKPLAY_NO_BULK_SCAN_TRIAL)
+    endif()
+    add_test(NAME qp-content-policy-${policy}-tests COMMAND qp-content-policy-${policy}-tests)
+  endforeach()
 endif()

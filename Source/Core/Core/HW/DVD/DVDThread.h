@@ -68,6 +68,9 @@ public:
   // Read only, with the CPU paused: validate the actual inserted disc for live admission.
   std::optional<std::array<u8, 20>> GetInsertedDiscSyncHash();
 
+  // CPU paused/guarded, plain Wii ISO only; reads exactly 32 raw header bytes.
+  std::optional<std::array<u8, 0x20>> GetInsertedDiscHeader();
+
   bool HasWiiHashes() const;
   DiscIO::Platform GetDiscType() const;
   u64 PartitionOffsetToRawOffset(u64 offset, const DiscIO::Partition& partition);

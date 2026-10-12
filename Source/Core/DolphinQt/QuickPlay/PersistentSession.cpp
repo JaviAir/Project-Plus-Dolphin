@@ -12,6 +12,7 @@
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QStringList>
+#include <array>
 #include <map>
 #include <tuple>
 #include "DolphinQt/QtUtils/QueueOnObject.h"
@@ -32,6 +33,7 @@
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/Movie.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/State.h"
 #include "Core/System.h"
@@ -127,61 +129,77 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
   for (const auto slot : ExpansionInterface::SLOTS)
     if (Config::Get(Config::GetInfoForEXIDevice(slot)) != ExpansionInterface::EXIDeviceType::None)
       return fail(QStringLiteral("The common CSS requires empty EXI peripheral slots."));
+  // Local port 1 may be a Standard Controller or a GameCube Adapter for Wii U port;
+  // either way the guest keeps the checkpoint's standard controllers on ports 1/2.
+  std::array<SerialInterface::SIDevices, 4> devices;
   for (int port = 0; port < 4; ++port)
-    if (Config::Get(Config::GetInfoForSIDevice(port)) !=
-        (port < 2 ? SerialInterface::SIDEVICE_GC_CONTROLLER : SerialInterface::SIDEVICE_NONE))
-      return fail(QStringLiteral("The common CSS requires standard GC devices on ports 1/2 "
-                                 "and empty ports 3/4."));
+    devices[port] = Config::Get(Config::GetInfoForSIDevice(port));
+  if (!ProjectPlusOnline::AdmitsPersistentSIDevices(devices))
+    return fail(QStringLiteral("Quick Play needs port 1 set to Standard Controller or GameCube "
+                               "Adapter for Wii U, port 2 set to Standard Controller and "
+                               "ports 3/4 empty."));
   {
     const Core::CPUThreadGuard guard(system);
-    const auto inserted = system.GetDVDThread().GetInsertedDiscSyncHash();
-    const UICommon::GameFile expected(Config::Get(Config::MAIN_DEFAULT_ISO));
-    if (!inserted || !expected.IsValid() || *inserted != expected.GetSyncIdentifier().sync_hash)
-      return fail(QStringLiteral("The inserted disc does not match the validated default ISO."));
+    if (IsTrial())
+    {
+      const auto inserted = system.GetDVDThread().GetInsertedDiscHeader();
+      QFile expected(QString::fromStdString(Config::Get(Config::MAIN_DEFAULT_ISO)));
+      if (!inserted || !expected.open(QIODevice::ReadOnly) ||
+          !QuickPlayContent::DiscHeadersMatch(
+              QByteArray(reinterpret_cast<const char*>(inserted->data()), inserted->size()),
+              expected.read(0x20)))
+        return fail(QStringLiteral("The inserted disc does not match the supported default Wii ISO."));
+    }
+    else
+    {
+      const auto inserted = system.GetDVDThread().GetInsertedDiscSyncHash();
+      const UICommon::GameFile expected(Config::Get(Config::MAIN_DEFAULT_ISO));
+      if (!inserted || !expected.IsValid() || *inserted != expected.GetSyncIdentifier().sync_hash)
+        return fail(QStringLiteral("The inserted disc does not match the validated default ISO."));
+    }
   }
-  QFile file(BundlePath() + QStringLiteral("common-css.json"));
-  if (!file.open(QIODevice::ReadOnly))
-    return fail(QStringLiteral("Install the validated QuickPlay/common-css bundle first."));
-  const auto json = QJsonDocument::fromJson(file.readAll()).object();
-  constexpr auto checkpoint_sha =
-      "5f39d05f1059b67d9c9796e3709ec0337dfa1740099d97342026105292a25ce9";
-  if (json[QStringLiteral("schema")].toInt() != 1 ||
-      json[QStringLiteral("checkpoint")].toString() != QString::fromLatin1(checkpoint_sha) ||
-      json[QStringLiteral("build")].toString().toStdString() !=
-          Common::GetScmRevGitStr() + "-persistent1" ||
-      json[QStringLiteral("config")].toString().toStdString() !=
-          ConfigLoaders::RunningNetPlayConfigIdentity())
+  QJsonObject json;
+  if (!QuickPlayContent::ReadManifest(BundlePath() + QStringLiteral("common-css.json"), &json))
+    return fail(QStringLiteral("Install a readable, supported QuickPlay/common-css bundle first."));
+  const auto build = QString::fromStdString(Common::GetScmRevGitStr() + "-persistent1");
+  if (!QuickPlayContent::CompatibleManifest(
+          json, m_policy, build, QString::fromStdString(ConfigLoaders::RunningNetPlayConfigIdentity())))
     return fail(QStringLiteral("The CSS bundle build or effective configuration is incompatible."));
   m_checkpoint = BundlePath() + QStringLiteral("common-css.sav");
-  const QJsonObject actual{
-      {QStringLiteral("checkpoint"), QString::fromLatin1(HashFile(m_checkpoint))},
-      {QStringLiteral("offline"),
-       QString::fromLatin1(HashFile(QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX)) +
-                                    QStringLiteral("Project+ Offline Launcher.dol")))},
-      {QStringLiteral("netplay"),
-       QString::fromLatin1(HashFile(QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX)) +
-                                    QStringLiteral("Netplay Launcher.dol")))},
-      {QStringLiteral("iso"), QString::fromLatin1(HashFile(
-                                  QString::fromStdString(Config::Get(Config::MAIN_DEFAULT_ISO))))},
-      {QStringLiteral("sd"), QString::fromLatin1(HashFile(QString::fromStdString(
-                                 Config::Get(Config::MAIN_WII_SD_CARD_IMAGE_PATH))))},
-      {QStringLiteral("game_settings"), QString::fromLatin1(HashTree(QString::fromStdString(
-                                            File::GetUserPath(D_GAMESETTINGS_IDX))))},
-      {QStringLiteral("system_settings"),
-       QString::fromLatin1(HashTree(QString::fromStdString(File::GetSysDirectory()) +
-                                    QStringLiteral("GameSettings")))},
-      {QStringLiteral("nand"),
-       QString::fromLatin1(HashTree(QString::fromStdString(File::GetUserPath(D_WIIROOT_IDX)), true))}};
-  for (auto it = actual.begin(); it != actual.end(); ++it)
+  const auto launchers = QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX));
+  const QuickPlayContent::Paths paths{
+      {QStringLiteral("checkpoint"), m_checkpoint},
+      {QStringLiteral("offline"), launchers + QStringLiteral("Project+ Offline Launcher.dol")},
+      {QStringLiteral("netplay"), launchers + QStringLiteral("Netplay Launcher.dol")},
+      {QStringLiteral("iso"), QString::fromStdString(Config::Get(Config::MAIN_DEFAULT_ISO))},
+      {QStringLiteral("sd"), QString::fromStdString(Config::Get(Config::MAIN_WII_SD_CARD_IMAGE_PATH))},
+      {QStringLiteral("game_settings"), QString::fromStdString(File::GetUserPath(D_GAMESETTINGS_IDX))},
+      {QStringLiteral("system_settings"), QString::fromStdString(File::GetSysDirectory()) +
+                                             QStringLiteral("GameSettings")},
+      {QStringLiteral("nand"), QString::fromStdString(File::GetUserPath(D_WIIROOT_IDX))}};
+  const auto failed_key = QuickPlayContent::CheckContent(
+      json, paths, m_policy, [](const QString& key, const QString& path) {
+        if (key == QStringLiteral("nand"))
+          return HashTree(path, true);
+        if (key == QStringLiteral("game_settings") || key == QStringLiteral("system_settings"))
+          return HashTree(path);
+        return HashFile(path);
+      });
+  if (!failed_key.isEmpty())
+    return fail(QStringLiteral("The CSS bundle file/storage check failed: ") + failed_key);
+  m_identity = QuickPlayContent::ContractIdentity(json, m_policy, build);
+  if (IsTrial())
   {
-    if (it.value().toString().size() != 64 || json[it.key()] != it.value())
-      return fail(QStringLiteral("The CSS bundle content/storage check failed: ") + it.key());
+    const auto path = paths[QStringLiteral("netplay")];
+    m_trial_launcher = QuickPlayContent::DeclaredLauncher(path, QFileInfo(path).size(), json, build);
+    INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: declared bundle accepted; content verification skipped; "
+                         "policy quickplay-declared-bundle-trial-v1 build {} contract {}",
+                 build.toStdString(), m_identity);
   }
-  m_identity = QCryptographicHash::hash(QJsonDocument(json).toJson(QJsonDocument::Compact),
-                                        QCryptographicHash::Sha256)
-                   .toHex()
-                   .toStdString();
-  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: validated contract {}", m_identity);
+  else
+  {
+    INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: validated contract {}", m_identity);
+  }
   return true;
 }
 
@@ -190,7 +208,11 @@ void PersistentQuickPlaySession::Restore(Core::System& system, std::function<voi
   Core::SetState(system, Core::State::Paused);
   const auto path = m_checkpoint.toStdString();
   const bool valid_file =
-      HashFile(m_checkpoint) == "5f39d05f1059b67d9c9796e3709ec0337dfa1740099d97342026105292a25ce9";
+      QuickPlayContent::CheckpointMayLoad(m_policy, [this] {
+        return HashFile(m_checkpoint) == QuickPlayContent::CHECKPOINT_SHA;
+      });
+  if (IsTrial())
+    INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: restore content verification skipped; ordinary loader retained");
   // Texture/device restoration must execute on the real CPU/GPU thread. A GUI
   // CPUThreadGuard alone does not make the OpenGL context current on that thread.
   Core::RunOnCPUThread(system, [&system, path, valid_file, finished = std::move(finished)] {
@@ -209,6 +231,11 @@ void PersistentQuickPlaySession::Restore(Core::System& system, std::function<voi
                     loaded, valid_file, system.GetCoreTiming().GetTicks(), system.GetPPCState().pc,
                     int(si.GetDeviceType(0)), int(si.GetDeviceType(1)), int(si.GetDeviceType(2)),
                     int(si.GetDeviceType(3)));
+    // The live devices came from the checkpoint. Pin the desired types to them
+    // so the next SI poll cannot swap in a locally configured Wii U adapter
+    // device; that port remains an input source of the standard controller.
+    for (int port = 0; ok && port < 4; ++port)
+      si.ChangeDevice(si.GetDeviceType(port), port);
     if (ok)
       INFO_LOG_FMT(NETPLAY,
                    "Persistent QuickPlay: clean CSS restored on CPU/GPU thread; Core retained "

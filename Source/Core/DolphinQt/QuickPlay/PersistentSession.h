@@ -3,6 +3,7 @@
 #pragma once
 
 #include <QString>
+#include "DolphinQt/QuickPlay/ContentPolicy.h"
 #include <functional>
 #include <string>
 
@@ -20,9 +21,13 @@ public:
   static bool IsConfigured();
   bool Validate(Core::System& system, QString* error);
   void Restore(Core::System& system, std::function<void(bool)> finished);
+  bool IsTrial() const { return m_policy == QuickPlayContent::Policy::DeclaredBundleTrialV1; }
+  const std::optional<QuickPlayContent::TrialLauncher>& TrialLauncher() const { return m_trial_launcher; }
   const std::string& Identity() const { return m_identity; }
 
 private:
+  const QuickPlayContent::Policy m_policy = QuickPlayContent::SelectedPolicy();
+  std::optional<QuickPlayContent::TrialLauncher> m_trial_launcher;
   QString m_checkpoint;
   std::string m_identity;
 };

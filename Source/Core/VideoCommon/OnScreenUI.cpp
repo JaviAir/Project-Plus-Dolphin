@@ -450,8 +450,10 @@ void OnScreenUI::Finalize()
   DrawDebugText();
   OSD::DrawMessages();
   DrawChallengesAndLeaderboards();
-  ProjectPlusOnline::host_ui_input_blocked =
-      ImGui::GetIO().WantCaptureKeyboard || ImGui::GetIO().WantCaptureMouse;
+  // Real overlay use only: an edited chat field or a held/dragged widget sets the
+  // active ID, hence WantCaptureKeyboard. A cursor merely resting over the NetPlay
+  // chat window (WantCaptureMouse) must not block controller actions.
+  ProjectPlusOnline::host_ui_input_blocked = ImGui::GetIO().WantCaptureKeyboard;
   DrawQuickPlayStatus();
   ImGui::Render();
 
@@ -480,6 +482,8 @@ void OnScreenUI::DrawQuickPlayStatus()
   // Loss of action authority removes the hint, while persistent setup/error text stays visible.
   const auto action = setup_action.Read();
   const bool paused_cancel = action.identity == value.identity && setup_action.Available(action);
+  const auto leave = leave_action.Read();
+  const bool leave_available = leave.identity == value.identity && leave_action.Available(leave);
   const bool local = local_css.Read().IsFresh(core, input, std::chrono::steady_clock::now());
   if (value.phase == PresentationPhase::LocalCSS && !local)
     return;
@@ -491,6 +495,8 @@ void OnScreenUI::DrawQuickPlayStatus()
   std::string text(value.text.data());
   if (value.cancel && (local || paused_cancel) && value.cancel_text[0])
     text += std::string("   ") + value.cancel_text.data();
+  if (value.leave && leave_available && value.leave_text[0])
+    text += std::string("   ") + value.leave_text.data();
   const float maximum_text_height = ImGui::GetTextLineHeight() * 2;
   while (!text.empty() &&
          ImGui::CalcTextSize(text.c_str(), nullptr, false, width).y > maximum_text_height)

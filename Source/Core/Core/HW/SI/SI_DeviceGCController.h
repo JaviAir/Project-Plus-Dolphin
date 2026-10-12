@@ -4,6 +4,7 @@
 #pragma once
 
 #include <array>
+#include <cstdint>
 
 #include "Core/HW/GCPad.h"
 #include "Core/HW/SI/SI_Device.h"
@@ -12,6 +13,11 @@
 namespace Movie
 {
 class MovieManager;
+}
+
+namespace ProjectPlusOnline
+{
+enum class LocalPadSource : std::uint8_t;
 }
 
 namespace SerialInterface
@@ -87,6 +93,8 @@ public:
 
 protected:
   void SetOrigin(const GCPadStatus& pad_status);
+  // Independent local CSS only: Quick Play commands from local controller 1.
+  void ProcessLocalCommands(GCPadStatus& pad_status, ProjectPlusOnline::LocalPadSource source);
 };
 
 // "TaruKonga", the DK Bongo controller

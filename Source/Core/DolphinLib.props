@@ -298,6 +298,7 @@
     <ClInclude Include="Core\HW\EXI\EXI_DeviceEthernet.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceGecko.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceProjectPlusOnline.h" />
+    <ClInclude Include="Core\ProjectPlusOnline\LocalInput.h" />
     <ClInclude Include="Core\ProjectPlusOnline\Protocol.h" />
     <ClInclude Include="Core\ProjectPlusOnline\Status.h" />
     <ClInclude Include="Core\HW\EXI\EXI_DeviceIPL.h" />
@@ -1012,6 +1013,7 @@
     <ClCompile Include="Core\HW\EXI\EXI_DeviceEthernet.cpp" />
     <ClCompile Include="Core\HW\EXI\EXI_DeviceGecko.cpp" />
     <ClCompile Include="Core\HW\EXI\EXI_DeviceProjectPlusOnline.cpp" />
+    <ClCompile Include="Core\ProjectPlusOnline\LocalInput.cpp" />
     <ClCompile Include="Core\HW\EXI\EXI_DeviceIPL.cpp" />
     <ClCompile Include="Core\HW\EXI\EXI_DeviceMemoryCard.cpp" />
     <ClCompile Include="Core\HW\EXI\EXI_DeviceModem.cpp" />

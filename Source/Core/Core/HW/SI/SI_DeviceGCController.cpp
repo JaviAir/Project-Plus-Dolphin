@@ -22,10 +22,12 @@
 #include "Core/NetPlayProto.h"
 #include "Core/ProjectPlusOnline/Chord.h"
 #include "Core/ProjectPlusOnline/LocalCSS.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/ProjectPlusOnline/SetupAction.h"
 #include "Core/ProjectPlusOnline/Status.h"
 #include "Core/System.h"
+#include "InputCommon/GCAdapter.h"
 #include "InputCommon/GCPadStatus.h"
 #include "InputCommon/ControlReference/ControlReference.h"
 #include "InputCommon/ControllerEmu/ControllerEmu.h"
@@ -163,6 +165,58 @@ void CSIDevice_GCController::HandleMoviePadStatus(Movie::MovieManager& movie, in
   }
 }
 
+void CSIDevice_GCController::ProcessLocalCommands(GCPadStatus& pad_status,
+                                                  ProjectPlusOnline::LocalPadSource source)
+{
+  // One reader across device instances: restore and device changes replace the
+  // SI object, while held/release state belongs to the local input lifetime.
+  static ProjectPlusOnline::LocalCommandReader reader;
+  const auto current_epoch = ProjectPlusOnline::persistent_input_epoch.load();
+  const auto core = ProjectPlusOnline::presentation_core_generation.load();
+  const bool css = ProjectPlusOnline::ObserveLocalCSS(m_system);
+  const auto attempt = ProjectPlusOnline::guest_cancel_attempt.load();
+  const bool enabled = ProjectPlusOnline::persistent_local_input.load() && css &&
+                       !Core::WantsDeterminism() && !m_system.GetMovie().IsMovieActive();
+  const bool gate = ControlReference::GetInputGate();
+  const bool device_connected =
+      source == ProjectPlusOnline::LocalPadSource::WiiUAdapter ?
+          GCAdapter::DeviceConnected(m_device_number) :
+          gate && [this] {
+            const auto lock = ControllerEmu::EmulatedController::GetStateLock();
+            return Pad::GetConfig()->GetController(m_device_number)->IsDefaultDeviceConnected();
+          }();
+  const auto sample =
+      ProjectPlusOnline::MakeLocalCommandSample(source, pad_status, gate, device_connected);
+  const auto result = reader.Poll(current_epoch, enabled, sample, attempt);
+  ProjectPlusOnline::local_css.Observe(core, current_epoch, result.observed);
+  const auto action = result.action;
+  if (action != ProjectPlusOnline::LocalChord::Action::None)
+  {
+    Core::QueueHostJob([current_epoch, attempt, action](Core::System&) {
+      // The host dispatcher serializes lifecycle changes. Do not hold a CPU
+      // guard while synchronously invoking GUI actions that pause the Core.
+      if (!ProjectPlusOnline::persistent_local_input.load() || Core::WantsDeterminism() ||
+          current_epoch != ProjectPlusOnline::persistent_input_epoch.load())
+        return;
+      if (action == ProjectPlusOnline::LocalChord::Action::Search)
+      {
+        INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: local CSS search chord dispatched");
+        Host_Message(HostMessageID::WMUserStartQuickPlay);
+      }
+      else if (attempt && ProjectPlusOnline::guest_cancel_attempt.load() == attempt)
+        Host_Message(HostMessageID::WMUserCancelQuickPlay);
+    });
+  }
+  const bool handed_off = ProjectPlusOnline::cancel_release_handoff.Consume(
+      core, current_epoch, sample.connected, (sample.buttons & PAD_BUTTON_B) != 0,
+      sample.authoritative);
+  if (result.consume_b || handed_off)
+  {
+    pad_status.button &= ~PAD_BUTTON_B;
+    pad_status.analogB = 0;
+  }
+}
+
 GCPadStatus CSIDevice_GCController::GetPadStatus()
 {
   GCPadStatus pad_status = {};
@@ -171,54 +225,16 @@ GCPadStatus CSIDevice_GCController::GetPadStatus()
   // the remote controllers receive their status there as well
   if (!NetPlay::IsNetPlayRunning())
   {
-    pad_status = Pad::GetStatus(m_device_number);
+    // A persistent restore keeps this standard controller on local port 1 even
+    // when a Wii U adapter port drives it; sample like NetPlay local pads.
+    const auto source = ProjectPlusOnline::LocalPadSourceFor(
+        Config::Get(Config::GetInfoForSIDevice(m_device_number)));
+    pad_status = ProjectPlusOnline::SampleLocalPad(m_device_number);
+    // As CSIDevice_GCAdapter::RunBuffer: an empty adapter port reads as unplugged locally.
+    if (source == ProjectPlusOnline::LocalPadSource::WiiUAdapter && !Core::WantsDeterminism())
+      pad_status.isConnected = GCAdapter::DeviceConnected(m_device_number);
     if (m_device_number == 0)
-    {
-      static ProjectPlusOnline::LocalChord chord;
-      static u64 epoch = 0;
-      const auto current_epoch = ProjectPlusOnline::persistent_input_epoch.load();
-      if (epoch != current_epoch)
-      {
-        chord = {};
-        epoch = current_epoch;
-      }
-      const bool css = ProjectPlusOnline::ObserveLocalCSS(m_system);
-      const auto attempt = ProjectPlusOnline::guest_cancel_attempt.load();
-      const bool enabled = ProjectPlusOnline::persistent_local_input.load() && css &&
-                           !Core::WantsDeterminism() && !m_system.GetMovie().IsMovieActive();
-      ProjectPlusOnline::local_css.Observe(ProjectPlusOnline::presentation_core_generation.load(),
-                                           current_epoch, enabled && pad_status.isConnected);
-      const auto action = chord.Poll(enabled && pad_status.isConnected, pad_status.button, attempt);
-      if (action != ProjectPlusOnline::LocalChord::Action::None)
-      {
-        Core::QueueHostJob([current_epoch, attempt, action](Core::System&) {
-          // The host dispatcher serializes lifecycle changes. Do not hold a CPU
-          // guard while synchronously invoking GUI actions that pause the Core.
-          if (!ProjectPlusOnline::persistent_local_input.load() || Core::WantsDeterminism() ||
-              current_epoch != ProjectPlusOnline::persistent_input_epoch.load())
-            return;
-          if (action == ProjectPlusOnline::LocalChord::Action::Search)
-          {
-            INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: local CSS search chord dispatched");
-            Host_Message(HostMessageID::WMUserStartQuickPlay);
-          }
-          else if (attempt && ProjectPlusOnline::guest_cancel_attempt.load() == attempt)
-            Host_Message(HostMessageID::WMUserCancelQuickPlay);
-        });
-      }
-      const bool release_sample = ControlReference::GetInputGate() && [] {
-        const auto lock = ControllerEmu::EmulatedController::GetStateLock();
-        return Pad::GetConfig()->GetController(0)->IsDefaultDeviceConnected();
-      }();
-      const bool handed_off = ProjectPlusOnline::cancel_release_handoff.Consume(
-          ProjectPlusOnline::presentation_core_generation.load(), current_epoch,
-          pad_status.isConnected, (pad_status.button & PAD_BUTTON_B) != 0, release_sample);
-      if (chord.ConsumesCancel() || handed_off)
-      {
-        pad_status.button &= ~PAD_BUTTON_B;
-        pad_status.analogB = 0;
-      }
-    }
+      ProcessLocalCommands(pad_status, source);
   }
 
   HandleMoviePadStatus(m_system.GetMovie(), m_device_number, &pad_status);
@@ -375,7 +391,14 @@ void CSIDevice_GCController::SendCommand(u32 command, u8 poll)
 
     if (pad_num < 4)
     {
-      const SIDevices device = m_system.GetSerialInterface().GetDeviceType(pad_num);
+      // A Wii U adapter port that drives a restored standard controller keeps its rumble.
+      const SIDevices live = m_system.GetSerialInterface().GetDeviceType(pad_num);
+      const SIDevices device =
+          live == SIDEVICE_GC_CONTROLLER &&
+                  ProjectPlusOnline::LocalPadSourceFor(Config::Get(Config::GetInfoForSIDevice(
+                      pad_num))) == ProjectPlusOnline::LocalPadSource::WiiUAdapter ?
+              SIDEVICE_WIIU_ADAPTER :
+              live;
       if (type == 1)
         CSIDevice_GCController::Rumble(pad_num, 1.0, device);
       else

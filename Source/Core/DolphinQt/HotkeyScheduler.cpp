@@ -4,6 +4,7 @@
 #include "DolphinQt/HotkeyScheduler.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <thread>
 
@@ -15,6 +16,7 @@
 #include "AudioCommon/AudioCommon.h"
 
 #include "Common/Config/Config.h"
+#include "Common/Logging/Log.h"
 #include "Common/Thread.h"
 
 #include "Core/AchievementManager.h"
@@ -28,6 +30,7 @@
 #include "Core/Host.h"
 #include "Core/HW/GCPad.h"
 #include "Core/HW/SI/SI_Device.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
 #include "DolphinQt/Host.h"
 #include "InputCommon/InputConfig.h"
 #include "InputCommon/GCPadStatus.h"
@@ -159,6 +162,8 @@ void HotkeyScheduler::Run()
 {
   Common::SetCurrentThreadName("HotkeyScheduler");
   ProjectPlusOnline::PausedCancelObserver cancel_observer;
+  ProjectPlusOnline::SessionLeaveObserver leave_observer;
+  std::array<bool, 5> last_leave_trace{};
 
   while (!m_stop_requested.IsSet())
   {
@@ -171,29 +176,64 @@ void HotkeyScheduler::Run()
     g_controller_interface.SetCurrentInputChannel(ciface::InputChannel::Host);
     g_controller_interface.UpdateInput();
 
-    // Host-channel configured local Controller1, before optional hotkeys and their gate override.
+    // Host-channel local controller 1 (mapped or Wii U adapter port), before
+    // optional hotkeys and their gate override.
     const auto now = std::chrono::steady_clock::now();
     const auto context = ProjectPlusOnline::setup_action.Read(now);
     Core::System& system = Core::System::GetInstance();
     Core::UpdateInputGate(true);
-    const bool device_connected = context.enabled && Pad::IsInitialized() && [] {
-      const auto lock = ControllerEmu::EmulatedController::GetStateLock();
-      return Pad::GetConfig()->GetController(0)->IsDefaultDeviceConnected();
-    }();
-    const bool available = context.enabled && device_connected &&
+    const auto pad = context.enabled ? ProjectPlusOnline::PeekLocalCommandPad() :
+                                       ProjectPlusOnline::LocalCommandSample{};
+    const bool available = context.enabled && pad.connected && pad.focused &&
         Core::GetState(system) == Core::State::Paused &&
         context.identity.core == ProjectPlusOnline::presentation_core_generation.load() &&
         context.identity.input == ProjectPlusOnline::persistent_input_epoch.load() &&
-        Host::GetInstance()->GetRenderFocus() && ControlReference::GetInputGate() &&
-        !ProjectPlusOnline::host_ui_input_blocked.load() &&
-        Config::Get(Config::GetInfoForSIDevice(0)) == SerialInterface::SIDEVICE_GC_CONTROLLER;
-    const auto pad = available ? Pad::GetStatus(0) : GCPadStatus{};
-    const bool connected = available && pad.isConnected;
+        Host::GetInstance()->GetRenderFocus() && !ProjectPlusOnline::host_ui_input_blocked.load();
+    const bool connected = available;
     ProjectPlusOnline::setup_action.Reader(context, connected, now);
-    if (cancel_observer.Poll(context, connected, (pad.button & PAD_BUTTON_B) != 0, now))
+    if (cancel_observer.Poll(context, connected, available && (pad.buttons & PAD_BUTTON_B) != 0,
+                             now, pad.source))
     {
       if (auto request = ProjectPlusOnline::setup_action.Queue(context, now))
         emit CancelPausedQuickPlay(*request);
+    }
+
+    // Session leave from shared CSS, stage select, gameplay or results. Read-only:
+    // the guest still receives these buttons. It follows the guest's own focus
+    // policy, like the search chord: with Background Input the controller that
+    // drives this instance may leave it unfocused. Real overlay use (chat typing,
+    // a held widget) still blocks it.
+    const auto leave_context = ProjectPlusOnline::leave_action.Read(now);
+    Core::UpdateInputGate(!Config::Get(Config::MAIN_INPUT_BACKGROUND_INPUT));
+    const auto leave_pad = leave_context.enabled ? ProjectPlusOnline::PeekLocalCommandPad() :
+                                                   ProjectPlusOnline::LocalCommandSample{};
+    const auto core_state = Core::GetState(system);
+    const bool leave_identity =
+        leave_context.identity.core == ProjectPlusOnline::presentation_core_generation.load() &&
+        leave_context.identity.input == ProjectPlusOnline::persistent_input_epoch.load();
+    const bool leave_ui_blocked = ProjectPlusOnline::host_ui_input_blocked.load();
+    const bool leave_available =
+        leave_context.enabled && leave_pad.connected && leave_pad.focused &&
+        (core_state == Core::State::Running || core_state == Core::State::Paused) &&
+        leave_identity && !leave_ui_blocked;
+    // Diagnostic: one line per change of the availability inputs while a leave is published.
+    const auto leave_trace = std::array{leave_context.enabled, leave_pad.connected,
+                                        leave_pad.focused, leave_identity, leave_ui_blocked};
+    if (leave_trace != last_leave_trace && (leave_context.enabled || last_leave_trace[0]))
+    {
+      INFO_LOG_FMT(NETPLAY,
+                   "Persistent QuickPlay: leave reader available {} (enabled {} connected {} "
+                   "focused {} identity {} ui_blocked {} core_state {})",
+                   leave_available, leave_context.enabled, leave_pad.connected, leave_pad.focused,
+                   leave_identity, leave_ui_blocked, static_cast<int>(core_state));
+    }
+    last_leave_trace = leave_trace;
+    ProjectPlusOnline::leave_action.Reader(leave_context, leave_available, now);
+    const std::uint16_t leave_buttons = leave_available ? leave_pad.buttons : 0;
+    if (leave_observer.Poll(leave_context, leave_available, leave_buttons, now, leave_pad.source))
+    {
+      if (auto request = ProjectPlusOnline::leave_action.Queue(leave_context, now))
+        emit LeaveQuickPlaySession(*request);
     }
 
     if (!HotkeyManagerEmu::IsEnabled())

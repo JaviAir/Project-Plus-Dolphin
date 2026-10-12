@@ -27,6 +27,7 @@ public:
   void Stop();
 signals:
   void CancelPausedQuickPlay(ProjectPlusOnline::SetupCancelRequest request);
+  void LeaveQuickPlaySession(ProjectPlusOnline::SetupCancelRequest request);
   void Open();
   void EjectDisc();
   void ChangeDisc();

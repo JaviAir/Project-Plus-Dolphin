@@ -46,8 +46,10 @@ struct PresentationSnapshot
   EntrySource entry = EntrySource::Desktop;
   PresentationPhase phase = PresentationPhase::Hidden;
   bool cancel = false;
+  bool leave = false;
   std::array<char, 512> text{};
   std::array<char, 64> cancel_text{};
+  std::array<char, 64> leave_text{};
   bool operator==(const PresentationSnapshot&) const = default;
 };
 struct PrepaintFence

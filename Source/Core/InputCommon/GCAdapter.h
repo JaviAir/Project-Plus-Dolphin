@@ -19,6 +19,8 @@ void SetAdapterCallback(std::function<void(void)> func);
 // Buttons have PAD_GET_ORIGIN set on new connection
 // Netplay and CSIDevice_GCAdapter make use of this.
 GCPadStatus Input(int chan);
+// Same state without consuming a new connection's origin report (host-side observers).
+GCPadStatus PeekInput(int chan);
 
 void Output(int chan, u8 rumble_command);
 bool IsDetected(const char** error_message);

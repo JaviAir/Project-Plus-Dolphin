@@ -39,3 +39,13 @@ Detailed reports, build artifacts, profiles and manual evidence remain in the
 companion workspace under `planning/quickplay/phase9/`; those files are outside
 this Git checkout. The archived plan is self-contained for implementation scope
 and lists the relevant source paths and workspace evidence locations.
+
+## Trial implementation
+
+`qp-seamless-scan` implements Option A behind the off-by-default CMake option
+`QUICKPLAY_NO_BULK_SCAN_TRIAL`; see [NO-BULK-SCAN-TRIAL.md](NO-BULK-SCAN-TRIAL.md).
+Strict validation remains the default. Build/test/runtime status: NOT RUN.
+
+UI96 Step3 makes local commands controller-agnostic (mapped Standard Controller
+or a GameCube Adapter for Wii U port) under both policies; see
+`Source/Core/DolphinQt/QuickPlay/PERSISTENT.md`. Build/test/runtime status: NOT RUN.
