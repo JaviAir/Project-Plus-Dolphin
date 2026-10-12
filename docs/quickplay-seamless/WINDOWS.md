@@ -39,6 +39,36 @@ cmake --build builds/plus-dolphin-cross-platform --target project-plus-dolphin -
 
 Then use `launch-scan-trial.py --build ../builds/plus-dolphin-cross-platform`.
 
+## What must match between peers
+
+From a Project+ maintainer, for ordinary P+ NetPlay:
+
+> - both sides need to be on the exact same version of Dolphin (windows-Linux should work fine)
+> - both sides need the exact same SD card image
+> - both sides need the exact same brawl dump
+>
+> the reason all of that matters is because it's literally emulating the same console
+> on both sides, and it's only synchronizing the controller inputs, nothing else. so it
+> has to know that you're both starting from the *exact same state* to keep everything
+> in sync
+
+Seamless Quick Play relies on the same rule, with a few more inputs because it starts
+from a saved state instead of a fresh boot:
+
+| Must be identical | Where | Checked by the no-scan build? |
+| --- | --- | --- |
+| Dolphin build (same commit) | `Dolphin.exe` / Linux binary | Yes: NetPlay version and Quick Play identity |
+| Brawl dump | plain `.iso` | Only the 32-byte header (game ID `RSBE01`); compare `Get-FileHash` / `sha256sum` with the manifest's `iso` by hand |
+| SD card image | `Wii\sd.raw` | No (it must exist) |
+| CSS checkpoint and manifest | `QuickPlay\common-css.sav`, `common-css.json` | Checkpoint version, PC and ticks only; the manifest is part of the identity |
+| NAND | `Wii\` | No |
+| Launchers | `Launcher\` | Declared identity plus file size |
+| Dolphin settings that affect emulation | `Config\`, `GameSettings\` | Yes: the configuration identity |
+
+Anything marked "No" is trusted, the same way ordinary P+ NetPlay trusts the SD card.
+A difference there does not produce an error; it shows up later as a desync. Copying one
+working `User` folder and one ISO to every machine (below) is what keeps them identical.
+
 ## Set up the Windows user folder
 
 1. Copy a working Linux trial profile's whole `User` folder to Windows (for example
