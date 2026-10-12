@@ -23,7 +23,7 @@ Retained: Core running, single-core, DSP HLE, read-only SD, no movie/Bluetooth
 passthrough, fixed-delay NetPlay without save/code sync, recording or
 spectators, game ID RSBE01, empty EXI slots, GC controllers on SI 1/2 (local
 port 1 may be a Wii U adapter port driving the standard controller) and none
-on 3/4, the external OpenGL window route (X11/XWayland or Windows), schema 1, the pinned declared
+on 3/4, the external render window route (X11/XWayland or Windows, any graphics backend), schema 1, the pinned declared
 checkpoint identity, effective NetPlay configuration identity, well-formed
 64-hex declarations for all eight keys, required file/directory existence,
 readability and open, CSS eligibility, Core/input/room/window fences, readiness,
@@ -44,7 +44,7 @@ I/O audit of the remaining checks:
   bytes from a plain Wii ISO; the configured default ISO is read for 32 bytes
   with `QFile`. Both must match and be RSBE01 with the Wii magic. The existing
   sync hash was not reused because it reads apploader, DOL, FST and banner at
-  sizes declared by the disc. Compressed formats (RVZ/WBFS) fail closed.
+  sizes declared by the disc. Compressed formats (RVZ/WBFS) fail closed (to do: read the header through `DiscIO`).
 - Launcher identity: `FindPPlusNetplayLauncher` uses game-list metadata only.
   NetPlay advertises a declared identity derived in memory from the manifest's
   `netplay` digest, the running build and the file size. The owned trial

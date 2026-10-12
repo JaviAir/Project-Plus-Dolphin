@@ -6,8 +6,11 @@ in-game flow on Windows, but it has **not been built or run on Windows yet**.
 ## What changed for Windows
 
 - The persistent flow accepted only the Qt `xcb` platform. It now accepts `xcb`
-  (X11 or XWayland) and `windows`. It still requires OpenGL, single-core mode and a
-  separate render window (not Render to Main Window).
+  (X11 or XWayland) and `windows`. It requires single-core mode (Dual Core off) and a
+  separate render window (Render to Main Window off). Any graphics backend is allowed:
+  the paused redraw only uses Dolphin's backend-independent drawing. Only OpenGL has
+  been tested; Direct3D 11 on Windows is the first test of another backend. The
+  backend is not part of the compared settings, so peers may use different backends.
 - `DolphinQt.vcxproj` now builds `QuickPlay\PersistentSession.cpp` (before this the
   branch could not link on Windows) and defines `QUICKPLAY_NO_BULK_SCAN_TRIAL`, so
   Windows builds use the no-scan policy. The CMake option now defaults to `ON` too.
@@ -71,12 +74,24 @@ working `User` folder and one ISO to every machine (below) is what keeps them id
 
 ## Set up the Windows user folder
 
+Launching `Dolphin.exe` with no arguments is fine, but Quick Play only works if its
+bundle is in the User folder that build actually uses. Without `-u`, a Windows build
+picks, in order: `User\` next to the exe if `portable.txt` is there, the registry
+`UserConfigPath` (often an older Dolphin's folder), `Documents\Dolphin Emulator`, then
+`AppData\Roaming\Dolphin Emulator`. The build does not copy `portable.txt`. Use
+**File > Open User Folder** to see which one it picked. If that folder has no
+`QuickPlay\common-css.json`, the search hint never appears.
+
+To use a folder next to the exe, create an empty `portable.txt` in `Binary\x64` and
+copy the profile to `Binary\x64\User`. The steps below use `C:\pplus\User` with
+`-u`; any of these works as long as everything sits in the same folder.
+
 1. Copy a working Linux trial profile's whole `User` folder to Windows (for example
    `planning/quickplay/phase9/ui96-manual/qp-seamless-scan/b/User` to
    `C:\pplus\User`). It contains everything that must match: `QuickPlay\`
    (`common-css.sav`, `common-css.json`), `Wii\` (NAND and `sd.raw`), `Launcher\`,
    `GameSettings\` and `Config\`.
-2. Copy the **same ISO file** (a plain `.iso`, not RVZ/WBFS). `common-css.json`'s
+2. Copy the **same ISO file** (a plain `.iso`, not RVZ/WBFS; see "To do" below). `common-css.json`'s
    `iso` value is the SHA256 of the original. `Get-FileHash <iso>` must print the same
    hash (Windows prints it in uppercase).
 3. Edit `C:\pplus\User\Config\Dolphin.ini` and change only these lines to Windows paths:
@@ -124,4 +139,14 @@ $env:QUICKPLAY_DISABLE_UPDATE_CHECK = "1"
    and can both search again?
 5. Note any error text, and send the `Persistent QuickPlay:` lines from both logs.
    A Windows-only crash, black screen or frozen window during the handoff points
-   at the OpenGL/WGL restore and redraw path, which is the main unverified part.
+   at the graphics restore and redraw path (Direct3D 11 or OpenGL/WGL), which is the
+   main unverified part.
+
+## To do (nice to have)
+
+- **Accept RVZ/WBFS dumps.** This is not a scan. The no-scan build reads only the
+  disc's first 32 bytes to confirm it is Brawl (`RSBE01`). It reads them straight from
+  the file, and in an RVZ or WBFS file those bytes are a container header, so those
+  dumps are refused even when the game data is identical. Reading the same 32 bytes
+  through Dolphin's disc reader (`DiscIO`), which decodes RVZ/WBFS, would fix it.
+- **Render to Main Window.** Quick Play currently needs a separate render window.

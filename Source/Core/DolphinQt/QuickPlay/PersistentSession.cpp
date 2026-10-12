@@ -235,7 +235,7 @@ void PersistentQuickPlaySession::Restore(Core::System& system, std::function<voi
   if (IsTrial())
     INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: restore content verification skipped; ordinary loader retained");
   // Texture/device restoration must execute on the real CPU/GPU thread. A GUI
-  // CPUThreadGuard alone does not make the OpenGL context current on that thread.
+  // CPUThreadGuard alone does not make the graphics context current on that thread.
   Core::RunOnCPUThread(system, [&system, path, valid_file, finished = std::move(finished)] {
     const bool loaded = valid_file && State::LoadForPersistentSession(system, path);
     bool ok = loaded;

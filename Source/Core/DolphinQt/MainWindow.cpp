@@ -207,7 +207,7 @@ static WindowSystemType GetWindowSystemType()
 }
 
 // Persistent Quick Play (same-Core handoff) is supported on X11, including XWayland,
-// and on Windows. The OpenGL, single-core and separate render window requirements
+// and on Windows. The single-core and separate render window requirements
 // are checked separately.
 static bool IsQuickPlayWindowSystem()
 {
@@ -1889,8 +1889,7 @@ void MainWindow::ReportQuickPlayError(const QString& error)
   const bool renderer_route = Core::IsRunning(m_system) && !m_system.IsDualCoreMode() &&
                               PersistentQuickPlaySession::IsConfigured() &&
                               IsQuickPlayWindowSystem() &&
-                              !m_rendering_to_main && m_render_widget->isVisible() &&
-                              Config::Get(Config::MAIN_GFX_BACKEND) == "OGL";
+                              !m_rendering_to_main && m_render_widget->isVisible();
   if (m_quickplay_entry == ProjectPlusOnline::EntrySource::InGame && !error.isEmpty() &&
       !renderer_route && !m_exit_requested && !m_pending_boot &&
       Core::GetState(m_system) != Core::State::Stopping)
@@ -1953,7 +1952,7 @@ void MainWindow::PrepareQuickPlayConnection(u64 attempt, bool host)
         !m_persistent_quickplay ||
         (IsPersistentQuickPlayBoundary() && !m_system.IsDualCoreMode() &&
          IsQuickPlayWindowSystem() && !m_rendering_to_main &&
-         m_render_widget->isVisible() && Config::Get(Config::MAIN_GFX_BACKEND) == "OGL");
+         m_render_widget->isVisible());
     const QString error = painted && dispatchable && supported ?
                               QString{} :
                               tr("Quick Play could not display its paused connection status. Open "
@@ -2022,8 +2021,7 @@ void MainWindow::PublishQuickPlayPresentation()
   const auto client = Settings::Instance().GetNetPlayClient();
   const auto lobby = client ? std::optional{client->GetLobbyState()} : std::nullopt;
   const bool disconnected = lobby && !lobby->connected;
-  const bool supported = Core::IsRunning(m_system) && PersistentQuickPlaySession::IsConfigured() &&
-                         Config::Get(Config::MAIN_GFX_BACKEND) == "OGL";
+  const bool supported = Core::IsRunning(m_system) && PersistentQuickPlaySession::IsConfigured();
   const bool eligible = local_css.Read().IsFresh(core, input, std::chrono::steady_clock::now()) &&
                         IsQuickPlayWindowSystem() &&
                         !m_rendering_to_main && m_render_widget->isVisible() && !client &&
@@ -2262,11 +2260,9 @@ void MainWindow::RedrawQuickPlayPresentation(std::function<void(bool)> finished)
 void MainWindow::ValidateQuickPlayContent(u64 attempt, std::function<void(bool, QString)> finished)
 {
   if (m_system.IsDualCoreMode() || !IsQuickPlayWindowSystem() ||
-      m_rendering_to_main || !m_render_widget->isVisible() ||
-      Config::Get(Config::MAIN_GFX_BACKEND) != "OGL")
+      m_rendering_to_main || !m_render_widget->isVisible())
   {
-    finished(false, tr("Quick Play requires single-core mode and OpenGL in a separate "
-                       "render window."));
+    finished(false, tr("Quick Play requires single-core mode and a separate render window."));
     return;
   }
   const auto previous = Core::GetState(m_system);
@@ -2522,10 +2518,10 @@ void MainWindow::PrepareQuickPlayHandoff(u64 attempt)
   }
   if (state != Core::State::Uninitialized &&
       (!IsQuickPlayWindowSystem() || m_rendering_to_main ||
-       !m_render_widget->isVisible() || Config::Get(Config::MAIN_GFX_BACKEND) != "OGL"))
+       !m_render_widget->isVisible()))
   {
     m_quickplay_controller->OnCoreStopped(
-        attempt, tr("In-game Quick Play requires OpenGL in a separate render window."));
+        attempt, tr("In-game Quick Play requires a separate render window."));
     return;
   }
   ProjectPlusOnline::presentation.Invalidate();
@@ -2631,7 +2627,7 @@ bool MainWindow::IsQuickPlayLaunchReady(u64 attempt)
       m_exit_requested || m_pending_boot ||
       (!Core::IsUninitialized(m_system) && !IsPersistentQuickPlayBoundary()) ||
       m_rendering_to_main || Config::Get(Config::MAIN_RENDER_TO_MAIN) ||
-      Config::Get(Config::MAIN_GFX_BACKEND) != "OGL" || !m_quickplay_retain_window ||
+      !m_quickplay_retain_window ||
       m_quickplay_setup->window != m_render_widget || !m_render_widget->isVisible() ||
       m_quickplay_setup->native_window != static_cast<u64>(m_render_widget->effectiveWinId()))
     return false;
