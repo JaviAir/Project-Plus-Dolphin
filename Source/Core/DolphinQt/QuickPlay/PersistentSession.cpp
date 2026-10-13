@@ -28,6 +28,7 @@
 #include "Core/PowerPC/PowerPC.h"
 #include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/State.h"
 #include "Core/System.h"
 #include "UICommon/GameFile.h"
@@ -141,6 +142,33 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
   for (const auto& line : config.split(QLatin1Char('\n'), Qt::SkipEmptyParts))
     INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: config {}", line.toStdString());
   return true;
+}
+
+void PersistentQuickPlaySession::RestoreLocal(Core::System& system,
+                                              std::function<void(bool)> finished)
+{
+  Core::SetState(system, Core::State::Paused);
+  Core::RunOnCPUThread(system, [&system, finished = std::move(finished)] {
+    const bool ok = QuickPlayRecipe::HasLocalSnapshot() &&
+                    State::LoadForPersistentSession(system, QuickPlayRecipe::LocalSnapshotPath());
+    // As in Restore: keep port 1's standard controller even when a Wii U adapter port drives
+    // it. Ports 2-4 are the configured devices already; ReleaseExtraPorts reapplies them.
+    if (ok)
+    {
+      auto& si = system.GetSerialInterface();
+      si.ChangeDevice(si.GetDeviceType(0), 0);
+    }
+    INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: local CSS snapshot restored {}; ticks {} PC {:08x}",
+                 ok, system.GetCoreTiming().GetTicks(), system.GetPPCState().pc);
+    const auto core = ProjectPlusOnline::presentation_core_generation.load();
+    const auto input = ProjectPlusOnline::persistent_input_epoch.load();
+    QueueOnObject(QApplication::instance(), [finished, ok, core, input] {
+      if (ProjectPlusOnline::presentation_core_generation.load() != core ||
+          ProjectPlusOnline::persistent_input_epoch.load() != input)
+        return;
+      finished(ok);
+    });
+  });
 }
 
 void PersistentQuickPlaySession::Restore(Core::System& system, std::function<void(bool)> finished)

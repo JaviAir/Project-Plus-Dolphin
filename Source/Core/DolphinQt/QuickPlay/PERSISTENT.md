@@ -63,8 +63,17 @@ device pinning keeps it. Guest ports 2-4 then get their configured devices back
 the local CSS, so an unconfigured second port shows no hand outside a match. A
 match restores the origin, which brings back its standard controller on port 2.
 The game image is covered (black, Quick Play status on top) while the origin is
-prepared and after each release until the CSS has dropped the port 2 hand for 3
-fields (about 0.3 s; 1.5 s at most), so that hand is never shown locally.
+prepared and, when a release swaps a device under a shown port 2 hand, until the
+CSS has dropped that hand for 3 fields (about 0.3 s; 1.5 s at most), so that hand
+is never shown locally.
+
+**Local CSS snapshot.** Still under the launch cover, once the hand is gone, the
+frontend pauses for about 0.08 s and saves this Core's hand-free CSS to
+`User/QuickPlay/generated/local.sav` (private to the run: deleted at the next
+Offline Launcher boot, never compared with a peer). Leaving a match restores it
+instead of the origin, so the return to the local CSS needs no cover; the origin
+is the fallback if it is missing or fails to load. A join always restores the
+origin. The snapshot is skipped if a search or session is already under way.
 
 **Leave.** A persistent session's NetPlay client disconnects without waiting for
 the server's acknowledgement: the stop is already agreed, and the host's own

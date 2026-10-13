@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <functional>
 #include <string>
 
 #include "Common/CommonTypes.h"
@@ -73,6 +74,19 @@ void ReleaseExtraPorts(Core::System& system);
 // Video thread. True while the origin is prepared and, after ReleaseExtraPorts, until the CSS
 // has dropped the port 2 hand: the game image is covered so that hand is never shown locally.
 bool ConcealsGame();
+
+// Local CSS snapshot: once the CSS has dropped the port 2 hand after capture, the frontend
+// saves this Core's own hand-free CSS so leaving a match can return to it without the cover.
+// It is private to this run and never compared with a peer; a join still restores the origin.
+// Host thread: called when the snapshot is due. The frontend either takes it (SaveLocalSnapshot
+// on the paused CPU thread) or skips it; either way it then calls FinishLocalSnapshot.
+void SetLocalSnapshotHandler(std::function<void()> handler);
+std::string LocalSnapshotPath();
+// CPU thread, Core paused.
+bool SaveLocalSnapshot(Core::System& system);
+void FinishLocalSnapshot();
+// A snapshot from this run exists.
+bool HasLocalSnapshot();
 
 // Emulation hooks. Each is a no-op that returns false unless recipe mode is active.
 bool EmulatedTime(Core::System& system, u64* seconds);

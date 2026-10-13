@@ -80,6 +80,9 @@ struct RecipeState
   std::atomic<Phase> phase{Phase::Off};
   // Read by the video thread: cover the game image (see ConcealsGame).
   std::atomic<bool> conceal{false};
+  std::atomic<bool> snapshot_queued{false};
+  std::atomic<bool> local_ready{false};
+  std::function<void()> local_snapshot_handler;  // set once by the frontend
   std::mutex lock;  // origin, failure, gpu_writes
   Origin origin;
   std::string failure;
@@ -100,6 +103,7 @@ struct RecipeState
   u32 css_task = 0;
   u64 conceal_fields = 0;
   u64 released_fields = 0;
+  bool local_pending = false;
 };
 
 RecipeState s;
@@ -334,6 +338,7 @@ void Capture(Core::System& system)
     s.origin = origin;
   }
   s.css_task = s.qual_task;
+  s.local_pending = true;
   s.phase = Phase::Ready;
   ReleaseExtraPorts(system);
   NOTICE_LOG_FMT(NETPLAY,
@@ -465,14 +470,60 @@ void ForceSettings()
 }
 }  // namespace
 
+// CPU thread (or under a CPU thread guard): the CSS shows a port 2 hand.
+bool SecondPortHandShown(Core::System& system)
+{
+  auto& mem = system.GetMemory();
+  const u32 area = Valid(s.css_task) ? mem.Read_U32(s.css_task + 0x44 + 4) : 0;
+  return Valid(area) &&
+         !(mem.Read_U32(area + 0x1dc) == 0xffffffff && mem.Read_U32(area + 0x1e0) == 4);
+}
+
 void ReleaseExtraPorts(Core::System& system)
 {
   auto& si = system.GetSerialInterface();
+  bool changed = false;
   for (int port = 1; port < 4; ++port)
-    si.ChangeDevice(Config::GetBase(Config::GetInfoForSIDevice(port)), port);
+  {
+    const auto device = Config::GetBase(Config::GetInfoForSIDevice(port));
+    changed |= si.GetDeviceType(port) != device;
+    si.ChangeDevice(device, port);
+  }
   s.conceal_fields = 0;
   s.released_fields = 0;
-  s.conceal = s.css_task != 0;
+  // Cover only a hand that is on screen and about to go: the origin's port 2 controller. The
+  // local snapshot has no port 2 hand (its port may still be switching to the configured device).
+  s.conceal = changed && SecondPortHandShown(system);
+}
+
+void SetLocalSnapshotHandler(std::function<void()> handler)
+{
+  s.local_snapshot_handler = std::move(handler);
+}
+
+std::string LocalSnapshotPath()
+{
+  return GeneratedDirectory() + "local.sav";
+}
+
+bool SaveLocalSnapshot(Core::System& system)
+{
+  const auto start = std::chrono::steady_clock::now();
+  s.local_ready = s.phase == Phase::Ready && State::SaveForPersistentSession(system, LocalSnapshotPath());
+  INFO_LOG_FMT(NETPLAY, "Quick Play recipe: local CSS snapshot saved {} in {:.3f} s",
+               s.local_ready.load(), Since(start));
+  return s.local_ready;
+}
+
+void FinishLocalSnapshot()
+{
+  s.snapshot_queued = false;
+  s.conceal = false;
+}
+
+bool HasLocalSnapshot()
+{
+  return s.local_ready && File::Exists(LocalSnapshotPath());
 }
 
 bool ConcealsGame()
@@ -503,6 +554,10 @@ bool ActivateForBoot(const std::string& game_id)
   s.nonneutral_seen = false;
   s.css_task = 0;
   s.conceal_fields = 0;
+  s.local_pending = false;
+  s.local_ready = false;
+  s.snapshot_queued = false;
+  File::Delete(LocalSnapshotPath());
   {
     std::lock_guard guard(s.lock);
     s.origin = {};
@@ -521,6 +576,7 @@ bool ActivateForBoot(const std::string& game_id)
 void Deactivate()
 {
   s.conceal = false;
+  s.local_ready = false;
   s.active = false;
   s.phase = Phase::Off;
 }
@@ -698,22 +754,43 @@ void NoteGuestIO()
     ++s.io_total;
 }
 
+// CPU thread: hand the due local snapshot to the frontend (host thread). The cover, if any,
+// stays up until the frontend has saved it.
+void QueueLocalSnapshot()
+{
+  s.local_pending = false;
+  if (!s.local_snapshot_handler)
+  {
+    s.conceal = false;
+    return;
+  }
+  s.snapshot_queued = true;
+  Core::QueueHostJob([](Core::System&) { s.local_snapshot_handler(); });
+}
+
 void OnFieldBoundary(Core::System& system)
 {
+  if (s.snapshot_queued)
+    return;
+  if (!s.conceal && s.local_pending && s.phase == Phase::Ready)
+  {
+    QueueLocalSnapshot();
+    return;
+  }
   if (s.conceal && s.phase == Phase::Ready)
   {
     // Port 2's CSS area goes inactive (as css-init-v1 checks for ports 3/4) once the
     // released port stops answering.
-    auto& mem = system.GetMemory();
-    const u32 area = Valid(s.css_task) ? mem.Read_U32(s.css_task + 0x44 + 4) : 0;
-    const bool released = Valid(area) && mem.Read_U32(area + 0x1dc) == 0xffffffff &&
-                          mem.Read_U32(area + 0x1e0) == 4;
+    const bool released = !SecondPortHandShown(system);
     s.released_fields = released ? s.released_fields + 1 : 0;
     if (s.released_fields > CONCEAL_SETTLE_FIELDS || ++s.conceal_fields > CONCEAL_LIMIT_FIELDS)
     {
-      s.conceal = false;
       INFO_LOG_FMT(NETPLAY, "Quick Play recipe: CSS shown after {} fields (port 2 released {})",
                    s.conceal_fields, released);
+      if (s.local_pending)
+        QueueLocalSnapshot();
+      else
+        s.conceal = false;
     }
     return;
   }

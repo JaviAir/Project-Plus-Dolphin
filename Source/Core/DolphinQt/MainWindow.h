@@ -215,6 +215,7 @@ private:
   void HandlePersistentBarrier(u32 game, bool release);
   void RetirePersistentQuickPlay(bool restore_css);
   void FinishPersistentQuickPlayRetirement();
+  void TakeLocalQuickPlaySnapshot();
   bool IsPersistentQuickPlayBoundary() const;
   void AdvanceQuickPlayPresentation(u64 attempt);
   void ReleaseQuickPlayWindow();

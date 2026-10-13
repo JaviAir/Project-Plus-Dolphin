@@ -299,6 +299,7 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   NetPlayInit();
   // Offline Launcher boots from this frontend prepare the in-game Quick Play origin.
   QuickPlayRecipe::SetFrontendSupported(true);
+  QuickPlayRecipe::SetLocalSnapshotHandler([this] { TakeLocalQuickPlaySnapshot(); });
 
   auto* status_timer = new QTimer(this);
   connect(status_timer, &QTimer::timeout, this, &MainWindow::PublishQuickPlayStatus);
@@ -2883,10 +2884,40 @@ void MainWindow::FinishPersistentQuickPlayRetirement()
     INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: session retired local CSS {}", resume);
     window->PublishQuickPlayStatus();
   };
-  if (restore)
-    m_persistent_quickplay->Restore(m_system, finish);
-  else
-    finish(true);
+  if (!restore)
+    return finish(true);
+  // Leave returns to this run's hand-free local CSS; the origin (with its port 2 controller,
+  // covered until the CSS drops that hand) only if the local snapshot is missing.
+  PersistentQuickPlaySession::RestoreLocal(
+      m_system, [window = QPointer<MainWindow>(this), finish](bool ok) {
+        if (ok || !window || !window->m_persistent_quickplay || !window->m_persistent_retiring)
+          return finish(ok);
+        window->m_persistent_quickplay->Restore(window->m_system, finish);
+      });
+}
+
+void MainWindow::TakeLocalQuickPlaySnapshot()
+{
+  // Only from the idle local CSS: never during a search, handoff, session or retirement.
+  if (!Core::IsRunning(m_system) || Core::GetState(m_system) != Core::State::Running ||
+      m_quickplay_setup || m_persistent_quickplay || m_persistent_retiring || m_quickplay_session ||
+      m_quickplay_validating || Settings::Instance().GetNetPlayClient() ||
+      Settings::Instance().GetNetPlayServer())
+  {
+    INFO_LOG_FMT(NETPLAY, "Quick Play recipe: local CSS snapshot skipped (not idle)");
+    QuickPlayRecipe::FinishLocalSnapshot();
+    return;
+  }
+  Core::SetState(m_system, Core::State::Paused);
+  Core::RunOnCPUThread(m_system, [this] {
+    QuickPlayRecipe::SaveLocalSnapshot(m_system);
+    QueueOnObject(this, [this] {
+      QuickPlayRecipe::FinishLocalSnapshot();
+      if (Core::GetState(m_system) == Core::State::Paused && !m_quickplay_setup &&
+          !m_persistent_quickplay && !m_persistent_retiring)
+        Core::SetState(m_system, Core::State::Running);
+    });
+  });
 }
 
 void MainWindow::ReleaseQuickPlayWindow()

@@ -24,6 +24,9 @@ public:
   static bool IsConfigured();
   bool Validate(Core::System& system, QString* error);
   void Restore(Core::System& system, std::function<void(bool)> finished);
+  // This run's hand-free local CSS (QuickPlayRecipe::LocalSnapshotPath), for leaving a match.
+  // Not the shared origin: no digest check. `finished(false)` if it is missing or fails to load.
+  static void RestoreLocal(Core::System& system, std::function<void(bool)> finished);
   bool IsTrial() const { return m_policy == QuickPlayContent::Policy::DeclaredBundleTrialV1; }
   const std::optional<QuickPlayContent::TrialLauncher>& TrialLauncher() const { return m_trial_launcher; }
   const std::string& Identity() const { return m_identity; }
