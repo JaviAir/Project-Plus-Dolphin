@@ -122,8 +122,9 @@ Emulator`, then `AppData\Roaming\Dolphin Emulator`. The steps below use
      pad, or a GC adapter in PC mode), or "GameCube Adapter for Wii U" (needs the
      WinUSB driver via Zadig). Leave the other ports alone; the build forces
      port 2 = Standard Controller and ports 3/4 empty while Quick Play is prepared.
-   You do not need to change emulation or graphics settings: the build forces the
-   ones peers must share for that run without saving them.
+   You do not need to change emulation settings: the build forces the ones peers
+   must share for that run without saving them. Internal resolution, anti-aliasing
+   and texture filtering are your own and can be changed at any time.
 4. To capture logs: View > Show Log Configuration, verbosity **Info**, enable
    **Write to File** and the **NetPlay** log type. The log is `User\Logs\dolphin.log`.
 

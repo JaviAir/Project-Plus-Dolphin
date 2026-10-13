@@ -38,14 +38,16 @@ frontend and ordinary NetPlay are unchanged.
   override, empty EXI slots, SI standard/standard/none/none, no Wii remotes,
   Bluetooth/USB passthrough or emulated USB devices, SD on/read-only/no folder sync,
   cheats on, GC language 0, region override off, custom RTC = epoch, fixed
-  WirelessMac `00:17:ab:0a:5a:79`, synchronous shader compilation, native
-  internal resolution, no MSAA/SSAA/anisotropy/texture filtering overrides, the
+  WirelessMac `00:17:ab:0a:5a:79`, synchronous shader compilation, the
   research recipe's EFB/XFB hacks, no custom textures or graphics mods, and the
   persistent NetPlay options (fixed delay, no save/code sync, recording or
   spectating). Configured Wii system settings (SYSCONF) are pinned to their
   defaults for the run, since the guest does not see them.
 - Left to the player: controller mapping and device, graphics backend and
-  adapter, window/fullscreen, audio backend and volume, emulation speed, OSD,
+  adapter, the settings ordinary NetPlay only syncs with Strict Settings Sync
+  (internal resolution, MSAA/SSAA, anisotropy, texture filtering, widescreen hack,
+  per-pixel lighting, fog, true color, copy filter, ...; they are not in the
+  contract identity and can change mid-session), window/fullscreen, audio backend and volume, emulation speed, OSD,
   hotkeys and coordinator/traversal/nickname settings.
 - Preparation only: unlimited speed and muted audio until the origin, then the
   player's own speed and volume.

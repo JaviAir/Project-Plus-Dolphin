@@ -291,6 +291,8 @@ std::string RunningNetPlayConfigIdentity()
     values.Set(info, Config::Get(info));
     result += std::string(name) + "=" + *values.Get<std::string>(info.GetLocation()) + "\n";
   };
+  // Settings NetPlay only syncs with Strict Settings Sync (resolution, AA, filtering, ...)
+  // are left out: Quick Play does not enable it, and they only change pixels.
   check(Config::MAIN_CPU_THREAD, "Config::MAIN_CPU_THREAD");
   check(Config::MAIN_CPU_CORE, "Config::MAIN_CPU_CORE");
   check(Config::MAIN_ENABLE_CHEATS, "Config::MAIN_ENABLE_CHEATS");
@@ -338,22 +340,6 @@ std::string RunningNetPlayConfigIdentity()
   check(Config::GFX_HACK_EFB_ACCESS_TILE_SIZE, "Config::GFX_HACK_EFB_ACCESS_TILE_SIZE");
   check(Config::GFX_HACK_EFB_DEFER_INVALIDATION, "Config::GFX_HACK_EFB_DEFER_INVALIDATION");
   check(Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED, "Config::MAIN_BLUETOOTH_PASSTHROUGH_ENABLED");
-  check(Config::GFX_HACK_VERTEX_ROUNDING, "Config::GFX_HACK_VERTEX_ROUNDING");
-  check(Config::GFX_EFB_SCALE, "Config::GFX_EFB_SCALE");
-  check(Config::GFX_HACK_COPY_EFB_SCALED, "Config::GFX_HACK_COPY_EFB_SCALED");
-  check(Config::GFX_FAST_DEPTH_CALC, "Config::GFX_FAST_DEPTH_CALC");
-  check(Config::GFX_ENABLE_PIXEL_LIGHTING, "Config::GFX_ENABLE_PIXEL_LIGHTING");
-  check(Config::GFX_WIDESCREEN_HACK, "Config::GFX_WIDESCREEN_HACK");
-  check(Config::GFX_ENHANCE_FORCE_TEXTURE_FILTERING, "Config::GFX_ENHANCE_FORCE_TEXTURE_FILTERING");
-  check(Config::GFX_ENHANCE_MAX_ANISOTROPY, "Config::GFX_ENHANCE_MAX_ANISOTROPY");
-  check(Config::GFX_ENHANCE_FORCE_TRUE_COLOR, "Config::GFX_ENHANCE_FORCE_TRUE_COLOR");
-  check(Config::GFX_ENHANCE_DISABLE_COPY_FILTER, "Config::GFX_ENHANCE_DISABLE_COPY_FILTER");
-  check(Config::GFX_DISABLE_FOG, "Config::GFX_DISABLE_FOG");
-  check(Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION, "Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION");
-  check(Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION_THRESHOLD, "Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION_THRESHOLD");
-  check(Config::GFX_ENABLE_GPU_TEXTURE_DECODING, "Config::GFX_ENABLE_GPU_TEXTURE_DECODING");
-  check(Config::GFX_MSAA, "Config::GFX_MSAA");
-  check(Config::GFX_SSAA, "Config::GFX_SSAA");
   check(Config::SESSION_GCI_FOLDER_CURRENT_GAME_ONLY, "Config::SESSION_GCI_FOLDER_CURRENT_GAME_ONLY");
   check(Config::SESSION_CODE_SYNC_OVERRIDE, "Config::SESSION_CODE_SYNC_OVERRIDE");
   for (auto slot : ExpansionInterface::SLOTS)

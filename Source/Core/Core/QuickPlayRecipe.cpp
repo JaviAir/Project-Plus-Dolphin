@@ -411,25 +411,15 @@ void ForceSettings()
   SetCurrent(Config::MAIN_ENABLE_SAVESTATES, true);
   SetCurrent(Config::MAIN_WIRELESS_MAC, std::string(WIRELESS_MAC));
 
+  // Resolution, AA, filtering and the other settings ordinary NetPlay only syncs with Strict
+  // Settings Sync stay the player's own: they only change pixels, and the digest leaves the
+  // memory EFB/XFB copies write out.
   SetCurrent(Config::GFX_SHADER_COMPILATION_MODE, ShaderCompilationMode::Synchronous);
   SetCurrent(Config::GFX_WAIT_FOR_SHADERS_BEFORE_STARTING, false);
-  SetCurrent(Config::GFX_EFB_SCALE, 1);
-  SetCurrent(Config::GFX_MSAA, 1u);
-  SetCurrent(Config::GFX_SSAA, false);
-  SetCurrent(Config::GFX_WIDESCREEN_HACK, false);
-  SetCurrent(Config::GFX_FAST_DEPTH_CALC, true);
-  SetCurrent(Config::GFX_ENABLE_PIXEL_LIGHTING, false);
-  SetCurrent(Config::GFX_DISABLE_FOG, false);
-  SetCurrent(Config::GFX_ENABLE_GPU_TEXTURE_DECODING, false);
   SetCurrent(Config::GFX_SAFE_TEXTURE_CACHE_COLOR_SAMPLES, 128);
   SetCurrent(Config::GFX_BACKEND_MULTITHREADING, false);
   SetCurrent(Config::GFX_HIRES_TEXTURES, false);
   SetCurrent(Config::GFX_MODS_ENABLE, false);
-  SetCurrent(Config::GFX_ENHANCE_FORCE_TEXTURE_FILTERING, TextureFilteringMode::Default);
-  SetCurrent(Config::GFX_ENHANCE_MAX_ANISOTROPY, AnisotropicFilteringMode::Force1x);
-  SetCurrent(Config::GFX_ENHANCE_FORCE_TRUE_COLOR, true);
-  SetCurrent(Config::GFX_ENHANCE_DISABLE_COPY_FILTER, true);
-  SetCurrent(Config::GFX_ENHANCE_ARBITRARY_MIPMAP_DETECTION, false);
   SetCurrent(Config::GFX_HACK_VI_SKIP, false);
   SetCurrent(Config::GFX_HACK_EFB_ACCESS_ENABLE, false);
   SetCurrent(Config::GFX_HACK_BBOX_ENABLE, false);
@@ -442,8 +432,6 @@ void ForceSettings()
   SetCurrent(Config::GFX_HACK_DEFER_EFB_COPIES, true);
   SetCurrent(Config::GFX_HACK_EFB_ACCESS_TILE_SIZE, 64);
   SetCurrent(Config::GFX_HACK_EFB_DEFER_INVALIDATION, false);
-  SetCurrent(Config::GFX_HACK_VERTEX_ROUNDING, false);
-  SetCurrent(Config::GFX_HACK_COPY_EFB_SCALED, true);
   SetCurrent(Config::GFX_HACK_SKIP_DUPLICATE_XFBS, false);
   SetCurrent(Config::GFX_PERF_QUERIES_ENABLE, false);
   // Rendering inputs the research recipe left at their defaults.
