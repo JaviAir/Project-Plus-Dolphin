@@ -55,7 +55,10 @@ Wii U on local port 1 keeps its `SIDevice0 = 12` setting: SI init in recipe mode
 creates the standard controller `ContractSIDevice` names, so the generated
 origin has standard controllers on both ports on every peer. After capture the
 standard controller samples the adapter port (as below), and the restore's
-device pinning keeps it.
+device pinning keeps it. Guest ports 2-4 then get their configured devices back
+(`QuickPlayRecipe::ReleaseExtraPorts`), after capture and after a match returns to
+the local CSS, so an unconfigured second port shows no hand outside a match. A
+match restores the origin, which brings back its standard controller on port 2.
 
 **Capture.** The origin is the third consecutive CSS update entry (module 10
 text + 0x4e10, word `9421ffe0`) where predicate `css-init-v1` holds (published

@@ -29,6 +29,7 @@
 #include "Core/HW/CPU.h"
 #include "Core/HW/EXI/EXI_Device.h"
 #include "Core/HW/Memmap.h"
+#include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/HW/Wiimote.h"
@@ -317,6 +318,7 @@ void Capture(Core::System& system)
     s.origin = origin;
   }
   s.phase = Phase::Ready;
+  ReleaseExtraPorts(system);
   NOTICE_LOG_FMT(NETPLAY,
                  "Quick Play recipe {}: origin digest {} ({}) at CSS update {}; prepared in "
                  "{:.2f} s wall, {:.3f} s emulated; digest {:.3f} s, save {:.3f} s, {} bytes",
@@ -457,6 +459,13 @@ void ForceSettings()
   SetCurrent(Config::MAIN_AUDIO_MUTED, true);
 }
 }  // namespace
+
+void ReleaseExtraPorts(Core::System& system)
+{
+  auto& si = system.GetSerialInterface();
+  for (int port = 1; port < 4; ++port)
+    si.ChangeDevice(Config::GetBase(Config::GetInfoForSIDevice(port)), port);
+}
 
 void SetFrontendSupported(bool supported)
 {

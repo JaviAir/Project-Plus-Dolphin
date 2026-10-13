@@ -63,6 +63,11 @@ Origin GetOrigin();
 // CPU thread, Core paused. MEM1, MEM2 and CPU register digest; `detail` names the parts.
 std::string ComputeDigest(Core::System& system, std::string* detail = nullptr);
 
+// CPU thread. Gives guest ports 2-4 their configured devices back once the origin is saved, so
+// an unconfigured second port shows no CSS hand outside a match. Restoring the origin brings
+// back the contract devices (standard controllers on ports 1/2, none on 3/4).
+void ReleaseExtraPorts(Core::System& system);
+
 // Emulation hooks. Each is a no-op that returns false unless recipe mode is active.
 bool EmulatedTime(Core::System& system, u64* seconds);
 bool HostMilliseconds(Core::System& system, u64* milliseconds);

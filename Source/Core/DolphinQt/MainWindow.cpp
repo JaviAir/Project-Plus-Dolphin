@@ -2858,7 +2858,13 @@ void MainWindow::FinishPersistentQuickPlayRetirement()
       window->m_quickplay_opponent_left_until =
           std::chrono::steady_clock::now() + std::chrono::seconds(4);
     if (resume)
+    {
+      {
+        const Core::CPUThreadGuard guard(window->m_system);
+        QuickPlayRecipe::ReleaseExtraPorts(window->m_system);
+      }
       Core::SetState(window->m_system, Core::State::Running);
+    }
     window->m_quickplay_owner_core = ProjectPlusOnline::presentation_core_generation.load();
     if (!ok)
       window->ReportQuickPlayError(window->m_quickplay_admission_error +
