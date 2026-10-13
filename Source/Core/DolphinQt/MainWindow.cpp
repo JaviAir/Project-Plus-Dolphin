@@ -1885,6 +1885,7 @@ bool MainWindow::OwnsInGameQuickPlay() const
 
 void MainWindow::ReportQuickPlayError(const QString& error)
 {
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: error shown: {}", error.toStdString());
   m_quickplay_admission_error = error;
   m_quickplay_owner_core = ProjectPlusOnline::presentation_core_generation.load();
   m_netplay_dialog->SetDiagnosticError(error);
@@ -2719,11 +2720,19 @@ void MainWindow::PreparePersistentQuickPlay(u32 game)
   PublishQuickPlayPresentation();
   const Core::CPUThreadGuard guard(m_system);
   if (!client->PreparePersistentSession(game, m_persistent_quickplay->Identity(),
-                                        m_persistent_quickplay->OriginDigest()))
-    QTimer::singleShot(0, this, [this, game] {
+                                        m_persistent_quickplay->OriginDigest(),
+                                        m_persistent_quickplay->ContractText()))
+    QTimer::singleShot(0, this, [this, game,
+                                 mismatch = QString::fromStdString(
+                                     client->PersistentConfigMismatch())] {
       if (m_persistent_game == game)
       {
-        ReportQuickPlayError(tr("The persistent session contract could not be prepared."));
+        ReportQuickPlayError(
+            mismatch.isEmpty() ?
+                tr("The persistent session contract could not be prepared.") :
+                tr("Quick Play refused the join: this setting differs from the host's: %1. "
+                   "Change it back, or restart the Offline Launcher.")
+                    .arg(mismatch));
         RetirePersistentQuickPlay(true);
       }
     });

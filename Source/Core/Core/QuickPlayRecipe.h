@@ -70,6 +70,9 @@ std::string ComputeDigest(Core::System& system, std::string* detail = nullptr);
 // an unconfigured second port shows no CSS hand outside a match. Restoring the origin brings
 // back the contract devices (standard controllers on ports 1/2, none on 3/4).
 void ReleaseExtraPorts(Core::System& system);
+// Video thread. True while the origin is prepared and, after ReleaseExtraPorts, until the CSS
+// has dropped the port 2 hand: the game image is covered so that hand is never shown locally.
+bool ConcealsGame();
 
 // Emulation hooks. Each is a no-op that returns false unless recipe mode is active.
 bool EmulatedTime(Core::System& system, u64* seconds);

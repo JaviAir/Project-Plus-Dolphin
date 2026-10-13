@@ -170,6 +170,7 @@ private:
   std::atomic<bool> m_persistent_session{false};
   // Contract identity and generated origin digest per ready player.
   std::map<PlayerId, std::pair<std::string, std::string>> m_persistent_ready;
+  std::map<PlayerId, std::string> m_persistent_contract_text;
   std::unordered_set<PlayerId> m_persistent_attached;
   bool m_persistent_attach_sent = false;
   bool m_persistent_release_sent = false;

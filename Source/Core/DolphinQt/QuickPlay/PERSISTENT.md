@@ -62,6 +62,14 @@ device pinning keeps it. Guest ports 2-4 then get their configured devices back
 (`QuickPlayRecipe::ReleaseExtraPorts`), after capture and after a match returns to
 the local CSS, so an unconfigured second port shows no hand outside a match. A
 match restores the origin, which brings back its standard controller on port 2.
+The game image is covered (black, Quick Play status on top) while the origin is
+prepared and after each release until the CSS has dropped the port 2 hand for 3
+fields (about 0.3 s; 1.5 s at most), so that hand is never shown locally.
+
+**Leave.** A persistent session's NetPlay client disconnects without waiting for
+the server's acknowledgement: the stop is already agreed, and the host's own
+server (or a leaving host's server) is gone, so the graceful wait only froze that
+player for its 3 s timeout.
 
 **Capture.** The origin is the third consecutive CSS update entry (module 10
 text + 0x4e10, word `9421ffe0`) where predicate `css-init-v1` holds (published
@@ -85,10 +93,14 @@ graphics backends round those pixels differently (OpenGL and Vulkan differed in
 one 640×480 RGBA8 copy), and the game only displays them, as in ordinary NetPlay
 between peers on different backends. Admission computes the contract identity
 `SHA256(policy, build revision, recipe id, RunningNetPlayConfigIdentity())` and
-sends identity and origin digest in `PersistentReady`. The host compares both;
-on a difference it sends `PersistentMismatch` (both digests) before `StopGame`,
+sends identity, origin digest and the hashed contract text in `PersistentReady`.
+The host compares both; on a difference it sends `PersistentMismatch` (both
+digests and up to 8 differing contract lines with both values) before `StopGame`,
 so both peers log `join refused … origin digest local X peer Y` and show the
-refusal instead of an opponent leave. `DSPThread` is no longer part of the
+refusal, naming the differing settings, instead of an opponent leave. A setting
+the host's NetPlay settings carry is checked earlier on the joining peer
+(`ValidateRunningNetPlayConfig`); that peer names it ("yours X, host's Y") and
+backs out, and the host sees it leave. `DSPThread` is no longer part of the
 configuration identity (Core resets it from the host core count; DSP HLE
 ignores it).
 

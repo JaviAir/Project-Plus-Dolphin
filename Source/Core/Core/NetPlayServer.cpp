@@ -4,6 +4,7 @@
 #include "Core/NetPlayServer.h"
 
 #include <algorithm>
+#include <array>
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
@@ -91,6 +92,58 @@
 
 namespace NetPlay
 {
+namespace
+{
+// Contract lines that differ between two peers' contract texts (see
+// QuickPlayContent::ContractText): the policy, build and recipe lines, then "name=value"
+// configuration lines in the same order on every build. Names drop the "Config::" prefix.
+std::vector<std::array<std::string, 3>> PersistentContractDifferences(std::string_view text1,
+                                                                      std::string_view text2)
+{
+  static constexpr std::array<std::string_view, 3> HEADER_NAMES{"Quick Play policy",
+                                                                "Dolphin build", "Quick Play recipe"};
+  const auto split = [](std::string_view text) {
+    std::vector<std::string_view> lines;
+    while (!text.empty())
+    {
+      const size_t end = text.find('\n');
+      lines.push_back(text.substr(0, end));
+      text = end == std::string_view::npos ? std::string_view{} : text.substr(end + 1);
+    }
+    return lines;
+  };
+  const auto lines1 = split(text1), lines2 = split(text2);
+  std::vector<std::array<std::string, 3>> differences;
+  for (size_t i = 0; i < std::max(lines1.size(), lines2.size()) &&
+                     differences.size() < MAX_PERSISTENT_MISMATCH_SETTINGS;
+       ++i)
+  {
+    const std::string_view line1 = i < lines1.size() ? lines1[i] : "";
+    const std::string_view line2 = i < lines2.size() ? lines2[i] : "";
+    if (line1 == line2)
+      continue;
+    if (i < HEADER_NAMES.size())
+    {
+      differences.push_back({std::string(HEADER_NAMES[i]), std::string(line1), std::string(line2)});
+      continue;
+    }
+    const auto name = [](std::string_view line) {
+      std::string_view n = line.substr(0, line.find('='));
+      if (n.starts_with("Config::"))
+        n.remove_prefix(8);
+      return n;
+    };
+    const auto value = [](std::string_view line) {
+      const size_t eq = line.find('=');
+      return eq == std::string_view::npos ? std::string_view{} : line.substr(eq + 1);
+    };
+    differences.push_back({std::string(name(line1.empty() ? line2 : line1)),
+                           std::string(value(line1)), std::string(value(line2))});
+  }
+  return differences;
+}
+}  // namespace
+
 NetPlayServer::~NetPlayServer()
 {
   if (is_connected)
@@ -1129,10 +1182,12 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       break;
     if (mid == MessageID::PersistentReady)
     {
-      std::string identity, origin;
-      packet >> identity >> origin;
-      if (!packet || identity.size() != 64 || origin.size() != 16 || m_persistent_attach_sent)
+      std::string identity, origin, contract_text;
+      packet >> identity >> origin >> contract_text;
+      if (!packet || identity.size() != 64 || origin.size() != 16 ||
+          contract_text.size() > MAX_PERSISTENT_CONTRACT_TEXT || m_persistent_attach_sent)
         break;
+      m_persistent_contract_text[player.pid] = std::move(contract_text);
       const auto ready = std::make_pair(identity, origin);
       const auto [it, inserted] = m_persistent_ready.emplace(player.pid, ready);
       if (!inserted && it->second != ready)
@@ -1144,9 +1199,17 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       if (identity1 != identity2 || origin1 != origin2)
       {
         // Name the difference to both peers before stopping, so neither reports a leave.
+        const auto settings = PersistentContractDifferences(m_persistent_contract_text[1],
+                                                            m_persistent_contract_text[2]);
         sf::Packet mismatch;
         mismatch << MessageID::PersistentMismatch << game << origin1 << origin2
-                 << (identity1 == identity2);
+                 << (identity1 == identity2) << static_cast<u32>(settings.size());
+        for (const auto& [name, value1, value2] : settings)
+        {
+          mismatch << name << value1 << value2;
+          ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: {} differs: player 1 {} player 2 {}",
+                        name, value1, value2);
+        }
         SendToClients(mismatch);
         sf::Packet stop;
         stop << MessageID::StopGame;
@@ -1795,6 +1858,7 @@ bool NetPlayServer::StartGame()
   INFO_LOG_FMT(NETPLAY, "Starting game.");
 
   m_persistent_ready.clear();
+  m_persistent_contract_text.clear();
   m_persistent_attached.clear();
   m_persistent_attach_sent = false;
   m_persistent_release_sent = false;

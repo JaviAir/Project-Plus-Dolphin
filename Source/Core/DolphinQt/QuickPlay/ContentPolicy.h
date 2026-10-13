@@ -33,8 +33,10 @@ constexpr Policy SelectedPolicy()
 // Peers ready together only with equal build, recipe and effective configuration. Each peer
 // generates its own origin; its digest is compared separately in the ready handshake.
 // In-memory data only. Explicit appends: DolphinQt builds with QT_USE_QSTRINGBUILDER.
-inline std::string ContractIdentity(Policy policy, const QString& build, const QString& recipe,
-                                    const QString& config)
+// The hashed text: policy, build and recipe lines, then the "name=value" configuration lines.
+// Peers also exchange it so a refusal can name what differs.
+inline QByteArray ContractText(Policy policy, const QString& build, const QString& recipe,
+                               const QString& config)
 {
   QByteArray bytes(policy == Policy::DeclaredBundleTrialV1 ? "quickplay-recipe-contract-v1 no-scan\n" :
                                                              "quickplay-recipe-contract-v1 strict\n");
@@ -43,7 +45,15 @@ inline std::string ContractIdentity(Policy policy, const QString& build, const Q
       .append(recipe.toUtf8())
       .append('\n')
       .append(config.toUtf8());
-  return QCryptographicHash::hash(bytes, QCryptographicHash::Sha256).toHex().toStdString();
+  return bytes;
+}
+inline std::string ContractIdentity(Policy policy, const QString& build, const QString& recipe,
+                                    const QString& config)
+{
+  return QCryptographicHash::hash(ContractText(policy, build, recipe, config),
+                                  QCryptographicHash::Sha256)
+      .toHex()
+      .toStdString();
 }
 // Official Project+ v3.2 Netplay content names the launcher "Project+ Netplay Launcher.dol";
 // this repository's Data/user copy is "Netplay Launcher.dol". The first existing name wins.

@@ -113,6 +113,8 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
   const auto recipe = QString::fromLatin1(QuickPlayRecipe::RECIPE_ID);
   const auto config = QString::fromStdString(ConfigLoaders::RunningNetPlayConfigIdentity());
   m_identity = QuickPlayContent::ContractIdentity(m_policy, build, recipe, config);
+  m_contract_text =
+      QuickPlayContent::ContractText(m_policy, build, recipe, config).toStdString();
   if (IsTrial())
   {
     const QDir launchers(QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX)));

@@ -64,6 +64,11 @@ constexpr u32 SI_ERROR_NO_RESPONSE = 0x08;
 constexpr int OCCURRENCE = 3;
 // The verified origin is at 5.7 s emulated; give up well after it.
 constexpr u64 PREPARE_LIMIT_SECONDS = 20;
+// After ports 2-4 are released, keep the image covered until the CSS drops the port 2 hand.
+// A configured, connected second controller keeps its hand; show the CSS after ~1.5 s anyway.
+constexpr u64 CONCEAL_LIMIT_FIELDS = 90;
+// The presented frame can trail guest memory; keep covering a few fields after the hand is gone.
+constexpr u64 CONCEAL_SETTLE_FIELDS = 3;
 constexpr char WIRELESS_MAC[] = "00:17:ab:0a:5a:79";
 constexpr char FALLBACK_SERIAL[] = "123456789";
 constexpr u32 MEM2_PHYSICAL = 0x10000000;
@@ -73,6 +78,8 @@ struct RecipeState
   std::atomic<bool> frontend{false};
   std::atomic<bool> active{false};
   std::atomic<Phase> phase{Phase::Off};
+  // Read by the video thread: cover the game image (see ConcealsGame).
+  std::atomic<bool> conceal{false};
   std::mutex lock;  // origin, failure, gpu_writes
   Origin origin;
   std::string failure;
@@ -90,6 +97,9 @@ struct RecipeState
   u64 io_total = 0;
   u64 io_total_at_entry = 0;
   bool nonneutral_seen = false;
+  u32 css_task = 0;
+  u64 conceal_fields = 0;
+  u64 released_fields = 0;
 };
 
 RecipeState s;
@@ -154,6 +164,7 @@ void Fail(Core::System& system, const std::string& reason, bool resume)
     s.failure = reason;
   }
   s.phase = Phase::Failed;
+  s.conceal = false;
   ERROR_LOG_FMT(NETPLAY,
                 "Quick Play recipe: preparation failed after {:.2f} s ({} CSS updates, ticks {}): {}",
                 Since(s.boot_time), s.entries, system.GetCoreTiming().GetTicks(), reason);
@@ -322,6 +333,7 @@ void Capture(Core::System& system)
     std::lock_guard guard(s.lock);
     s.origin = origin;
   }
+  s.css_task = s.qual_task;
   s.phase = Phase::Ready;
   ReleaseExtraPorts(system);
   NOTICE_LOG_FMT(NETPLAY,
@@ -458,6 +470,14 @@ void ReleaseExtraPorts(Core::System& system)
   auto& si = system.GetSerialInterface();
   for (int port = 1; port < 4; ++port)
     si.ChangeDevice(Config::GetBase(Config::GetInfoForSIDevice(port)), port);
+  s.conceal_fields = 0;
+  s.released_fields = 0;
+  s.conceal = s.css_task != 0;
+}
+
+bool ConcealsGame()
+{
+  return s.conceal;
 }
 
 void SetFrontendSupported(bool supported)
@@ -481,6 +501,8 @@ bool ActivateForBoot(const std::string& game_id)
   s.io_total = 0;
   s.io_total_at_entry = 0;
   s.nonneutral_seen = false;
+  s.css_task = 0;
+  s.conceal_fields = 0;
   {
     std::lock_guard guard(s.lock);
     s.origin = {};
@@ -489,6 +511,7 @@ bool ActivateForBoot(const std::string& game_id)
   }
   s.boot_time = std::chrono::steady_clock::now();
   s.phase = Phase::Preparing;
+  s.conceal = true;
   s.active = true;
   NOTICE_LOG_FMT(NETPLAY, "Quick Play recipe {}: preparing from {} (epoch {:#x}, build {})",
                  RECIPE_ID, game_id, EPOCH, Common::GetScmRevGitStr());
@@ -497,6 +520,7 @@ bool ActivateForBoot(const std::string& game_id)
 
 void Deactivate()
 {
+  s.conceal = false;
   s.active = false;
   s.phase = Phase::Off;
 }
@@ -676,6 +700,23 @@ void NoteGuestIO()
 
 void OnFieldBoundary(Core::System& system)
 {
+  if (s.conceal && s.phase == Phase::Ready)
+  {
+    // Port 2's CSS area goes inactive (as css-init-v1 checks for ports 3/4) once the
+    // released port stops answering.
+    auto& mem = system.GetMemory();
+    const u32 area = Valid(s.css_task) ? mem.Read_U32(s.css_task + 0x44 + 4) : 0;
+    const bool released = Valid(area) && mem.Read_U32(area + 0x1dc) == 0xffffffff &&
+                          mem.Read_U32(area + 0x1e0) == 4;
+    s.released_fields = released ? s.released_fields + 1 : 0;
+    if (s.released_fields > CONCEAL_SETTLE_FIELDS || ++s.conceal_fields > CONCEAL_LIMIT_FIELDS)
+    {
+      s.conceal = false;
+      INFO_LOG_FMT(NETPLAY, "Quick Play recipe: CSS shown after {} fields (port 2 released {})",
+                   s.conceal_fields, released);
+    }
+    return;
+  }
   if (s.phase != Phase::Preparing)
     return;
   ++s.fields;

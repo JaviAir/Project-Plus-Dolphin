@@ -18,6 +18,7 @@
 #include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/ProjectPlusOnline/SetupAction.h"
 #include "Core/ProjectPlusOnline/Status.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 #include "InputCommon/GCAdapter.h"
 
@@ -454,6 +455,13 @@ void OnScreenUI::Finalize()
   // active ID, hence WantCaptureKeyboard. A cursor merely resting over the NetPlay
   // chat window (WantCaptureMouse) must not block controller actions.
   ProjectPlusOnline::host_ui_input_blocked = ImGui::GetIO().WantCaptureKeyboard;
+  // Behind the ImGui windows (the Quick Play status stays visible), above the game image.
+  if (QuickPlayRecipe::ConcealsGame())
+  {
+    ImGui::GetBackgroundDrawList()->AddRectFilled(
+        ImVec2(0, 0), ImVec2(float(m_backbuffer_width), float(m_backbuffer_height)),
+        IM_COL32(0, 0, 0, 255));
+  }
   DrawQuickPlayStatus();
   ImGui::Render();
 

@@ -27,6 +27,7 @@ public:
   bool IsTrial() const { return m_policy == QuickPlayContent::Policy::DeclaredBundleTrialV1; }
   const std::optional<QuickPlayContent::TrialLauncher>& TrialLauncher() const { return m_trial_launcher; }
   const std::string& Identity() const { return m_identity; }
+  const std::string& ContractText() const { return m_contract_text; }
   const std::string& OriginDigest() const { return m_origin.digest; }
 
 private:
@@ -34,4 +35,5 @@ private:
   std::optional<QuickPlayContent::TrialLauncher> m_trial_launcher;
   QuickPlayRecipe::Origin m_origin;
   std::string m_identity;
+  std::string m_contract_text;
 };

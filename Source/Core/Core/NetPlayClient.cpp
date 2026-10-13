@@ -502,17 +502,32 @@ void NetPlayClient::OnData(sf::Packet& packet)
     u32 game;
     std::string origin1, origin2;
     bool identities_equal;
-    packet >> game >> origin1 >> origin2 >> identities_equal;
-    if (!packet || !m_persistent_session || game != m_current_game)
+    u32 count = 0;
+    packet >> game >> origin1 >> origin2 >> identities_equal >> count;
+    if (!packet || !m_persistent_session || game != m_current_game ||
+        count > MAX_PERSISTENT_MISMATCH_SETTINGS)
       break;
     const bool first = m_local_player->pid == 1;
+    std::vector<std::array<std::string, 3>> settings(count);
+    for (auto& [name, local, peer] : settings)
+    {
+      std::string value1, value2;
+      packet >> name >> value1 >> value2;
+      local = first ? value1 : value2;
+      peer = first ? value2 : value1;
+    }
+    if (!packet)
+      break;
     const auto& local = first ? origin1 : origin2;
     const auto& peer = first ? origin2 : origin1;
     ERROR_LOG_FMT(NETPLAY,
                   "Persistent QuickPlay: join refused by host; origin digest local {} peer {}, "
                   "contract identities {}",
                   local, peer, identities_equal ? "equal" : "differ");
-    m_dialog->OnPersistentMismatch(local, peer);
+    for (const auto& [name, local_value, peer_value] : settings)
+      ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: {} differs: local {} peer {}", name,
+                    local_value, peer_value);
+    m_dialog->OnPersistentMismatch(local, peer, settings);
     break;
   }
 
@@ -1679,10 +1694,19 @@ void NetPlayClient::Disconnect()
   ENetEvent netEvent;
   m_connecting = false;
   m_connection_state = ConnectionState::Failure;
-  if (m_server)
-    enet_peer_disconnect(m_server, 0);
-  else
+  if (!m_server)
     return;
+  // A persistent Quick Play session has already agreed to stop. The host's own server is
+  // gone by now (and a leaving host destroys its server without answering), so waiting for
+  // a graceful disconnect only freezes this player for the 3 s timeout.
+  if (m_persistent_session)
+  {
+    enet_peer_disconnect_now(m_server, 0);
+    enet_host_flush(m_client);
+    m_server = nullptr;
+    return;
+  }
+  enet_peer_disconnect(m_server, 0);
 
   while (enet_host_service(m_client, &netEvent, 3000) > 0)
   {
@@ -1920,7 +1944,8 @@ bool NetPlayClient::ValidatePersistentAttach()
     if (si.GetDeviceType(port) != (port < 2 ? SerialInterface::SIDEVICE_GC_CONTROLLER :
                                            SerialInterface::SIDEVICE_NONE))
       return false;
-  if (!ConfigLoaders::ValidateRunningNetPlayConfig(m_net_settings))
+  m_persistent_config_mismatch.clear();
+  if (!ConfigLoaders::ValidateRunningNetPlayConfig(m_net_settings, &m_persistent_config_mismatch))
     return false;
   return true;
 }
@@ -1937,17 +1962,18 @@ bool NetPlayClient::ResearchAttachRunningCore(bool validate_only)
 }
 
 bool NetPlayClient::PreparePersistentSession(u32 game, const std::string& identity,
-                                             const std::string& origin)
+                                             const std::string& origin,
+                                             const std::string& contract_text)
 {
   if (!m_persistent_session || game == 0 || game != m_current_game ||
       m_persistent_prepared_game || identity.size() != 64 || origin.size() != 16 ||
-      !ValidatePersistentAttach())
+      contract_text.size() > MAX_PERSISTENT_CONTRACT_TEXT || !ValidatePersistentAttach())
     return false;
   m_persistent_prepared_game = game;
   m_persistent_released = false;
   m_persistent_release_event.Reset();
   sf::Packet packet;
-  packet << MessageID::PersistentReady << game << identity << origin;
+  packet << MessageID::PersistentReady << game << identity << origin << contract_text;
   SendAsync(std::move(packet));
   INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: ready game {} player {} contract {} origin {}", game,
                m_local_player->pid, identity, origin);

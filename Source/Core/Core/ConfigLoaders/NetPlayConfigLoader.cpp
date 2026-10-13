@@ -182,7 +182,7 @@ GenerateNetPlayConfigLoader(const NetPlay::NetSettings& settings)
 
 // Compare typed effective values, including defaults, before installing any layer.
 // The four exceptions are runtime FMA policy, write policy, and past boot choices.
-bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings)
+bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings, std::string* mismatch)
 {
   Config::Layer candidate(GenerateNetPlayConfigLoader(settings));
   bool ok = true;
@@ -191,6 +191,19 @@ bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings)
     {
       std::fprintf(stderr, "Persistent NetPlay config mismatch: %s\n", name);
       ok = false;
+      if (mismatch)
+      {
+        const auto text = [&info](const auto& value) {
+          Config::Layer values(Config::LayerType::CurrentRun);
+          values.Set(info, value);
+          return *values.Get<std::string>(info.GetLocation());
+        };
+        std::string_view shown = name;
+        if (shown.starts_with("Config::"))
+          shown.remove_prefix(8);
+        *mismatch = fmt::format("{} (yours {}, host's {})", shown, text(Config::Get(info)),
+                                text(candidate.Get(info)));
+      }
     }
   };
   check(Config::MAIN_CPU_THREAD, "Config::MAIN_CPU_THREAD");

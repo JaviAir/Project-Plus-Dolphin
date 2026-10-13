@@ -1200,9 +1200,21 @@ void NetPlayDialog::OnPersistentBarrier(u32 game, bool release)
 }
 
 void NetPlayDialog::OnPersistentMismatch(const std::string& local_origin,
-                                         const std::string& peer_origin)
+                                         const std::string& peer_origin,
+                                         const std::vector<std::array<std::string, 3>>& settings)
 {
+  QStringList named;
+  for (const auto& [name, local, peer] : settings)
+  {
+    named.append(tr("%1 (yours %2, opponent's %3)")
+                     .arg(QString::fromStdString(name), QString::fromStdString(local),
+                          QString::fromStdString(peer)));
+  }
   const auto message =
+      !named.isEmpty() ?
+          tr("Quick Play refused the join: these settings differ from your opponent's: %1. "
+             "Change them back, or restart the Offline Launcher.")
+              .arg(named.join(QStringLiteral("; "))) :
       local_origin != peer_origin ?
           tr("Quick Play refused the join: the two games prepared different starting states "
              "(yours %1, opponent's %2). Both players need the same Dolphin build, SD card, "
@@ -1210,6 +1222,7 @@ void NetPlayDialog::OnPersistentMismatch(const std::string& local_origin,
               .arg(QString::fromStdString(local_origin), QString::fromStdString(peer_origin)) :
           tr("Quick Play refused the join: your Dolphin build or emulation settings differ "
              "from your opponent's.");
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: refusal shown: {}", message.toStdString());
   QueueOnObject(this, [this, message, generation = m_session_generation.load()] {
     if (generation == m_session_generation)
       ReportError(message);

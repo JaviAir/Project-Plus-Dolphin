@@ -233,6 +233,10 @@ enum class SyncCodeID : u8
 };
 
 constexpr u32 MAX_NAME_LENGTH = 30;
+// Persistent Quick Play: readable contract text in PersistentReady, and the differing contract
+// lines the host names in PersistentMismatch.
+constexpr size_t MAX_PERSISTENT_CONTRACT_TEXT = 16384;
+constexpr u32 MAX_PERSISTENT_MISMATCH_SETTINGS = 8;
 constexpr size_t CHUNKED_DATA_UNIT_SIZE = 16384;
 constexpr u32 MAX_ENET_MTU = 1392;  // see https://github.com/lsalzman/enet/issues/132
 

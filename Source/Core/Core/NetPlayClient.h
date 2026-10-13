@@ -61,10 +61,11 @@ public:
   virtual void OnMsgStartGame(u32 game_id) = 0;
   virtual void OnMsgStopGame() = 0;
   virtual void OnPersistentBarrier(u32 game, bool release) {}
-  // The host refused a persistent join: the generated origins differ, or (if they are equal)
-  // the contract identities do.
-  virtual void OnPersistentMismatch(const std::string& local_origin,
-                                    const std::string& peer_origin)
+  // The host refused a persistent join: the generated origins and/or the contract identities
+  // differ. `settings` names the differing contract lines (name, local value, peer value).
+  virtual void OnPersistentMismatch(
+      const std::string& local_origin, const std::string& peer_origin,
+      const std::vector<std::array<std::string, 3>>& settings)
   {
   }
   virtual void OnMsgPowerButton() = 0;
@@ -157,7 +158,10 @@ public:
   // Disposable CSS-only experiment; never used by the production frontend.
   bool ResearchAttachRunningCore(bool validate_only = false);
   bool IsPersistentSession() const { return m_persistent_session; }
-  bool PreparePersistentSession(u32 game, const std::string& identity, const std::string& origin);
+  // Set when the last persistent attach check found a setting that differs from the host's.
+  const std::string& PersistentConfigMismatch() const { return m_persistent_config_mismatch; }
+  bool PreparePersistentSession(u32 game, const std::string& identity, const std::string& origin,
+                                const std::string& contract_text);
   bool AttachPersistentSession(u32 game);
   bool ReleasePersistentSession(u32 game);
   // Wake every input wait before pausing, then disable the runtime under the CPU guard.
@@ -322,6 +326,7 @@ private:
   bool StartGameImpl(const std::string& path, bool research_attach);
   bool ValidatePersistentAttach();
   const bool m_persistent_session;
+  std::string m_persistent_config_mismatch;
   u32 m_persistent_prepared_game = 0;
   std::atomic<bool> m_persistent_released{false};
   Common::Event m_persistent_release_event;
