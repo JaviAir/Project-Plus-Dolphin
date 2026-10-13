@@ -15,6 +15,8 @@ const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR{
     {System::Main, "NetPlay", "QuickPlayCoordinator"}, "http://127.0.0.1:3000"};
 const Info<std::string> NETPLAY_QUICKPLAY_REGION{
     {System::Main, "NetPlay", "QuickPlayRegion"}, "us-east"};
+const Info<bool> NETPLAY_QUICKPLAY_SEAMLESS{{System::Main, "NetPlay", "QuickPlaySeamless"},
+                                           true};
 
 const Info<std::string> NETPLAY_TRAVERSAL_SERVER{{System::Main, "NetPlay", "TraversalServer"},
                                                  "stun.dolphin-emu.org"};

@@ -27,6 +27,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "DiscIO/Enums.h"
@@ -416,6 +417,10 @@ u32 CEXIIPL::GetEmulatedTime(Core::System& system, u32 epoch)
 
     // let's keep time moving forward, regardless of what it starts at
     ltime += system.GetCoreTiming().GetTicks() / system.GetSystemTimers().GetTicksPerSecond();
+  }
+  else if (QuickPlayRecipe::EmulatedTime(system, &ltime))
+  {
+    // Recipe clock: the same value NetPlay continues with after a Quick Play join.
   }
   else
   {

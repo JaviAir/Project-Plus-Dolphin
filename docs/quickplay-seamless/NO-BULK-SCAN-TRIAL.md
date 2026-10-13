@@ -1,5 +1,11 @@
 # Declared-bundle Quick Play trial (Option A, no bulk scan)
 
+> **Superseded in part (Integration 1).** There is no declared bundle any more: each peer
+> generates its CSS origin at boot and the contract identity is build + recipe + effective
+> configuration (`Source/Core/DolphinQt/QuickPlay/PERSISTENT.md`). The policy selection, the
+> 32-byte disc header check and the no-scan launcher declaration below still apply; the
+> manifest, checkpoint and archived-build parts do not.
+
 Isolated, user-operated UI trial of [Option A](UI96-VALIDATION-OPTIONS.md).
 Option B (background verification plus a cross-launch cache) is not implemented.
 Build, test and runtime status at hand-off: **NOT RUN**.

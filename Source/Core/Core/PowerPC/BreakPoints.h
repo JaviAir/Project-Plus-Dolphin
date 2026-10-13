@@ -4,6 +4,7 @@
 #pragma once
 
 #include <cstddef>
+#include <functional>
 #include <optional>
 #include <string>
 #include <vector>
@@ -95,11 +96,24 @@ public:
   void Clear();
   void ClearTemporary();
 
+  // One host-owned stop that the CPU backends check even without debug mode and that the
+  // debugger does not list. CPU thread only. The handler runs before the instruction at
+  // `address`; returning true breaks there.
+  void SetCaptureHook(u32 address, std::function<bool()> handler);
+  void ClearCaptureHook();
+  bool IsCaptureAddress(u32 address) const
+  {
+    return m_capture_handler && address == m_capture_address;
+  }
+  bool RunCaptureHook() const { return m_capture_handler(); }
+
 private:
   TBreakPoints m_breakpoints;
   std::optional<TBreakPoint> m_temp_breakpoint;
   Core::System& m_system;
   bool m_breaking_enabled = true;
+  u32 m_capture_address = 0;
+  std::function<bool()> m_capture_handler;
 };
 
 class DelayedMemCheckUpdate;

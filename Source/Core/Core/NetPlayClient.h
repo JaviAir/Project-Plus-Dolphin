@@ -61,6 +61,12 @@ public:
   virtual void OnMsgStartGame(u32 game_id) = 0;
   virtual void OnMsgStopGame() = 0;
   virtual void OnPersistentBarrier(u32 game, bool release) {}
+  // The host refused a persistent join: the generated origins differ, or (if they are equal)
+  // the contract identities do.
+  virtual void OnPersistentMismatch(const std::string& local_origin,
+                                    const std::string& peer_origin)
+  {
+  }
   virtual void OnMsgPowerButton() = 0;
   virtual void OnPlayerConnect(const std::string& player) = 0;
   virtual void OnPlayerDisconnect(const std::string& player) = 0;
@@ -151,7 +157,7 @@ public:
   // Disposable CSS-only experiment; never used by the production frontend.
   bool ResearchAttachRunningCore(bool validate_only = false);
   bool IsPersistentSession() const { return m_persistent_session; }
-  bool PreparePersistentSession(u32 game, const std::string& identity);
+  bool PreparePersistentSession(u32 game, const std::string& identity, const std::string& origin);
   bool AttachPersistentSession(u32 game);
   bool ReleasePersistentSession(u32 game);
   // Wake every input wait before pausing, then disable the runtime under the CPU guard.

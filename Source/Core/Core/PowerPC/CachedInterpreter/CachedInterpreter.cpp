@@ -375,8 +375,9 @@ bool CachedInterpreter::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
 
     if (!op.skip)
     {
-      if (IsDebuggingEnabled() && !cpu.IsStepping() &&
-          breakpoints.IsAddressBreakPoint(js.compilerPC))
+      if (!cpu.IsStepping() &&
+          ((IsDebuggingEnabled() && breakpoints.IsAddressBreakPoint(js.compilerPC)) ||
+           breakpoints.IsCaptureAddress(js.compilerPC)))
       {
         Write(CheckBreakpoint, {power_pc, js.compilerPC, js.downcountAmount});
       }

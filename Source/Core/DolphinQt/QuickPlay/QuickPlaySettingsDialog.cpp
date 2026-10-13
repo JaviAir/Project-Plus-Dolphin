@@ -5,6 +5,7 @@
 
 #include <chrono>
 
+#include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
@@ -38,6 +39,12 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   m_canonical_region_count = m_region->count();
   form->addRow(tr("Region:"), m_region);
   layout->addLayout(form);
+  m_seamless = new QCheckBox(tr("Prepare in-game Quick Play when the Offline Launcher starts"));
+  m_seamless->setObjectName(QStringLiteral("quickplay_seamless"));
+  m_seamless->setToolTip(
+      tr("Boots the Offline Launcher with fixed Quick Play settings and a temporary Wii NAND, "
+         "so the game's own saves and tags are not kept. Applies from the next launch."));
+  layout->addWidget(m_seamless);
 
   m_test = new QPushButton(tr("Test Connection to Coordinator Server"));
   layout->addWidget(m_test);
@@ -88,6 +95,7 @@ void QuickPlaySettingsDialog::Open()
       index = m_region->count() - 1;
     }
     m_region->setCurrentIndex(index);
+    m_seamless->setChecked(Config::Get(Config::NETPLAY_QUICKPLAY_SEAMLESS));
     m_result->clear();
   }
   show();
@@ -125,6 +133,8 @@ void QuickPlaySettingsDialog::Save()
   Config::SetBase(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
   Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_REGION, region.toStdString());
   Config::SetBase(Config::NETPLAY_QUICKPLAY_REGION, region.toStdString());
+  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_SEAMLESS, m_seamless->isChecked());
+  Config::SetBase(Config::NETPLAY_QUICKPLAY_SEAMLESS, m_seamless->isChecked());
   Config::Save();
   accept();
 }

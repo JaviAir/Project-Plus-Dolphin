@@ -17,6 +17,7 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/IOS/FS/FileSystem.h"
 #include "Core/IOS/Uids.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 namespace IOS::HLE
@@ -170,6 +171,7 @@ static IPCReply GetReplyForSuperblockOperation(int ios_version, ResultCode resul
 
 std::optional<IPCReply> FSDevice::Open(const OpenRequest& request)
 {
+  QuickPlayRecipe::NoteGuestIO();
   return MakeIPCReply([&](Ticks t) {
     return m_core
         .Open(request.uid, request.gid, request.path, static_cast<Mode>(request.flags & 3),
@@ -323,6 +325,7 @@ bool FSCore::HasCacheForFile(u64 fd, u32 offset) const
 
 std::optional<IPCReply> FSDevice::Read(const ReadWriteRequest& request)
 {
+  QuickPlayRecipe::NoteGuestIO();
   return MakeIPCReply([&](Ticks t) {
     auto& system = GetSystem();
     auto& memory = system.GetMemory();
@@ -354,6 +357,7 @@ s32 FSCore::Read(u64 fd, u8* data, u32 size, std::optional<u32> ipc_buffer_addr,
 
 std::optional<IPCReply> FSDevice::Write(const ReadWriteRequest& request)
 {
+  QuickPlayRecipe::NoteGuestIO();
   return MakeIPCReply([&](Ticks t) {
     auto& system = GetSystem();
     auto& memory = system.GetMemory();

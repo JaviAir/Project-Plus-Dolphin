@@ -20,6 +20,7 @@
 #include "Core/HW/Memmap.h"
 #include "Core/IOS/IOS.h"
 #include "Core/IOS/VersionInfo.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 namespace IOS::HLE
@@ -171,6 +172,7 @@ s32 SDIOSlot0Device::ExecuteCommand(const Request& request, u32 buffer_in, u32 b
                                     u32 rw_buffer, u32 rw_buffer_size, u32 buffer_out,
                                     u32 buffer_out_size)
 {
+  QuickPlayRecipe::NoteGuestIO();
   // The game will send us a SendCMD with this information. To be able to read and write
   // to a file we need to prepare a 0x10 byte output buffer as response.
   struct

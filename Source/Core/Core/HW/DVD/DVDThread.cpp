@@ -24,6 +24,7 @@
 #include "Core/HW/Memmap.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/IOS/ES/Formats.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "DiscIO/Blob.h"
@@ -217,6 +218,7 @@ void DVDThread::StartReadInternal(bool copy_to_ram, u32 output_address, u64 dvd_
                                   s64 ticks_until_completion)
 {
   ASSERT(Core::IsCPUThread());
+  QuickPlayRecipe::NoteGuestIO();
 
   auto& core_timing = m_system.GetCoreTiming();
 

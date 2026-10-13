@@ -22,6 +22,7 @@
 #include "Core/HW/Sram.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/Movie.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "DiscIO/Enums.h"
@@ -130,8 +131,9 @@ void ExpansionInterfaceManager::Init(const Sram* override_sram)
     const CardFlashId& flash_id = sram.settings_ex.flash_id[Memcard::SLOT_A];
     const u32 rtc_bias = sram.settings.rtc_bias;
     const u32 sram_language = static_cast<u32>(sram.settings.language);
-    const u64 format_time =
+    u64 format_time =
         Common::Timer::GetLocalTimeSinceJan1970() - ExpansionInterface::CEXIIPL::GC_EPOCH;
+    QuickPlayRecipe::MemcardFormatTime(&format_time);
 
     for (u32 i = 0; i < MAX_EXI_CHANNELS; i++)
     {

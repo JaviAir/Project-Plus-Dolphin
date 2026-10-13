@@ -34,6 +34,7 @@
 #include "Core/IOS/Uids.h"
 #include "Core/PowerPC/MMU.h"
 #include "Core/PowerPC/PowerPC.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "DiscIO/Enums.h"
@@ -426,7 +427,7 @@ bool CBoot::SetupWiiMemory(Core::System& system, IOS::HLE::IOSC::ConsoleType con
   {
     if (Core::WantsDeterminism())
       serno = "123456789";
-    else
+    else if (!QuickPlayRecipe::FallbackSerial(&serno))
       serno = Common::SettingsWriter::GenerateSerialNumber();
     INFO_LOG_FMT(BOOT, "No previous serial number found, generated one instead: {}", serno);
   }

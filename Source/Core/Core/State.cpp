@@ -953,6 +953,32 @@ bool LoadForPersistentSession(Core::System& system, const std::string& filename)
   return false;
 }
 
+bool SaveForPersistentSession(Core::System& system, const std::string& filename)
+{
+  if (!Core::IsCPUThread() || Core::GetState(system) != Core::State::Paused)
+    return false;
+  s_compress_and_dump_thread.WaitForCompletion();
+  Common::UniqueBuffer<u8> buffer;
+  const auto size = SaveToBuffer(system, buffer);
+  if (!size)
+    return false;
+  const std::string temp_filename = filename + ".tmp";
+  {
+    File::IOFile f(temp_filename, "wb");
+    if (!f)
+      return false;
+    WriteHeadersToFile(size, f);
+    const std::span<const u8> data(buffer.data(), size);
+    if (s_use_compression)
+      CompressBufferToFile(data, f);
+    else
+      f.WriteBytes(data.data(), data.size());
+    if (!f.IsGood() || !f.Close())
+      return false;
+  }
+  return File::Rename(temp_filename, filename);
+}
+
 void SetOnAfterLoadCallback(AfterLoadCallbackFunc callback)
 {
   s_on_after_load_callback = std::move(callback);

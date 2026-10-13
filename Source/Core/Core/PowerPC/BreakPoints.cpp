@@ -8,6 +8,7 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "Common/BitSet.h"
@@ -223,6 +224,22 @@ void BreakPoints::ClearTemporary()
     m_system.GetJitInterface().InvalidateICache(m_temp_breakpoint->address, 4, true);
     m_temp_breakpoint.reset();
   }
+}
+
+void BreakPoints::SetCaptureHook(u32 address, std::function<bool()> handler)
+{
+  ClearCaptureHook();
+  m_capture_address = address;
+  m_capture_handler = std::move(handler);
+  m_system.GetJitInterface().InvalidateICache(address, 4, true);
+}
+
+void BreakPoints::ClearCaptureHook()
+{
+  if (!m_capture_handler)
+    return;
+  m_capture_handler = nullptr;
+  m_system.GetJitInterface().InvalidateICache(m_capture_address, 4, true);
 }
 
 MemChecks::MemChecks(Core::System& system) : m_system(system)

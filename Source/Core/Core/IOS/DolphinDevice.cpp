@@ -17,6 +17,7 @@
 #include "Core/Core.h"
 #include "Core/HW/Memmap.h"
 #include "Core/Host.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 namespace IOS::HLE
@@ -253,9 +254,10 @@ IPCReply DolphinDevice::GetSystemTime(const IOCtlVRequest& request) const
   auto& memory = system.GetMemory();
 
   // Write Unix timestamp in milliseconds to memory address
-  const u64 milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
-                               std::chrono::system_clock::now().time_since_epoch())
-                               .count();
+  u64 milliseconds = std::chrono::duration_cast<std::chrono::milliseconds>(
+                         std::chrono::system_clock::now().time_since_epoch())
+                         .count();
+  QuickPlayRecipe::HostMilliseconds(system, &milliseconds);
   memory.Write_U64(milliseconds, request.io_vectors[0].address);
   return IPCReply(IPC_SUCCESS);
 }

@@ -635,6 +635,9 @@ void PowerPCManager::CheckExternalExceptions()
 
 bool PowerPCManager::CheckBreakPoints()
 {
+  if (m_breakpoints.IsCaptureAddress(m_ppc_state.pc))
+    return m_breakpoints.RunCaptureHook();
+
   const TBreakPoint* bp = m_breakpoints.GetBreakpoint(m_ppc_state.pc);
 
   if (!m_breakpoints.IsBreakingEnabled() || !bp || !bp->is_enabled ||

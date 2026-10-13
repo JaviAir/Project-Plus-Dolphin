@@ -179,6 +179,7 @@ enum class MessageID : u8
   PersistentAttach = 0xA9,
   PersistentAttached = 0xAA,
   PersistentRelease = 0xAB,
+  PersistentMismatch = 0xAC,
 
   TimeBase = 0xB0,
   DesyncDetected = 0xB1,

@@ -365,6 +365,8 @@ private:
   QString m_quickplay_admission_error;
   std::vector<std::function<void(bool)>> m_quickplay_redraw_callbacks;
   std::chrono::steady_clock::time_point m_quickplay_cancelled_until{};
+  // Shows why Quick Play preparation failed for a few seconds after it happens.
+  std::optional<std::chrono::steady_clock::time_point> m_quickplay_recipe_failure_until;
   // Set by an accepted local leave chord: Leaving… during retirement, then Left session.
   std::chrono::steady_clock::time_point m_quickplay_left_until{};
   // The opponent ended the shared session: shown while retiring, then on the restored CSS.

@@ -10,6 +10,7 @@
 
 #include "Common/WorkQueueThread.h"
 
+class QCheckBox;
 class QComboBox;
 class QLabel;
 class QLineEdit;
@@ -33,6 +34,7 @@ private:
 
   QLineEdit* m_coordinator;
   QComboBox* m_region;
+  QCheckBox* m_seamless;
   int m_canonical_region_count;
   QLabel* m_result;
   QPushButton* m_test;

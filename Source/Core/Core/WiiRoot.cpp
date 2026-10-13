@@ -26,6 +26,7 @@
 #include "Core/IOS/Uids.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayClient.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/SysConf.h"
 #include "Core/System.h"
 #include "Core/Config/SYSCONFSettings.h"
@@ -429,6 +430,12 @@ void CleanUpWiiFileSystemContents(const BootSessionData& boot_session_data)
 
   if (!cleanup_required)
     return;
+  // A Quick Play recipe NAND is private session state; never copy it over the configured NAND.
+  if (QuickPlayRecipe::SuppressCopyBack())
+  {
+    INFO_LOG_FMT(CORE, "Wii FS Cleanup: Quick Play recipe session, configured NAND unchanged.");
+    return;
+  }
 
   INFO_LOG_FMT(CORE, "Wii FS Cleanup: Copying from temporary FS to configured_fs.");
 

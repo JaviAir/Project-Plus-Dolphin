@@ -100,6 +100,9 @@ void LoadAs(Core::System& system, std::string filename);
 // Session owner only: execute on the actual CPU/GPU thread with the Core paused.
 // Uses normal state header/serializer checks; restores an undo buffer on failure.
 bool LoadForPersistentSession(Core::System& system, const std::string& filename);
+// Session owner only: CPU thread with the Core paused. Writes the file before returning,
+// without status messages or moving an existing file to the undo backup.
+bool SaveForPersistentSession(Core::System& system, const std::string& filename);
 
 // Temporary Phase 9.1 opt-in raw export; call only on the paused CPU thread.
 bool ResearchExport(Core::System& system, const std::string& name);

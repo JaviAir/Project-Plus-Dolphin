@@ -497,6 +497,25 @@ void NetPlayClient::OnData(sf::Packet& packet)
     break;
   }
 
+  case MessageID::PersistentMismatch:
+  {
+    u32 game;
+    std::string origin1, origin2;
+    bool identities_equal;
+    packet >> game >> origin1 >> origin2 >> identities_equal;
+    if (!packet || !m_persistent_session || game != m_current_game)
+      break;
+    const bool first = m_local_player->pid == 1;
+    const auto& local = first ? origin1 : origin2;
+    const auto& peer = first ? origin2 : origin1;
+    ERROR_LOG_FMT(NETPLAY,
+                  "Persistent QuickPlay: join refused by host; origin digest local {} peer {}, "
+                  "contract identities {}",
+                  local, peer, identities_equal ? "equal" : "differ");
+    m_dialog->OnPersistentMismatch(local, peer);
+    break;
+  }
+
   case MessageID::PowerButton:
     OnPowerButton();
     break;
@@ -1917,18 +1936,21 @@ bool NetPlayClient::ResearchAttachRunningCore(bool validate_only)
   return StartGameImpl({}, true);
 }
 
-bool NetPlayClient::PreparePersistentSession(u32 game, const std::string& identity)
+bool NetPlayClient::PreparePersistentSession(u32 game, const std::string& identity,
+                                             const std::string& origin)
 {
   if (!m_persistent_session || game == 0 || game != m_current_game ||
-      m_persistent_prepared_game || identity.size() != 64 || !ValidatePersistentAttach())
+      m_persistent_prepared_game || identity.size() != 64 || origin.size() != 16 ||
+      !ValidatePersistentAttach())
     return false;
   m_persistent_prepared_game = game;
   m_persistent_released = false;
   m_persistent_release_event.Reset();
   sf::Packet packet;
-  packet << MessageID::PersistentReady << game << identity;
+  packet << MessageID::PersistentReady << game << identity << origin;
   SendAsync(std::move(packet));
-  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: ready game {} player {}", game, m_local_player->pid);
+  INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: ready game {} player {} contract {} origin {}", game,
+               m_local_player->pid, identity, origin);
   return true;
 }
 

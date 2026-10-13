@@ -230,9 +230,11 @@ bool PPCAnalyzer::CanSwapAdjacentOps(const CodeOp& a, const CodeOp& b) const
   u64 b_flags = b_info->flags;
 
   // can't reorder around breakpoints
+  auto& breakpoints = Core::System::GetInstance().GetPowerPC().GetBreakPoints();
+  if (breakpoints.IsCaptureAddress(a.address) || breakpoints.IsCaptureAddress(b.address))
+    return false;
   if (m_is_debugging_enabled)
   {
-    auto& breakpoints = Core::System::GetInstance().GetPowerPC().GetBreakPoints();
     if (breakpoints.IsAddressBreakPoint(a.address) || breakpoints.IsAddressBreakPoint(b.address))
       return false;
   }

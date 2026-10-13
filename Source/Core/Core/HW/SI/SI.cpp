@@ -28,6 +28,8 @@
 #include "Core/HW/SystemTimers.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/ProjectPlusOnline/LocalInput.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "InputCommon/ControllerInterface/ControllerInterface.h"
@@ -294,6 +296,10 @@ void SerialInterfaceManager::Init()
     else if (!NetPlay::IsNetPlayRunning())
     {
       m_desired_device_types[i] = Config::Get(Config::GetInfoForSIDevice(i));
+      // A Quick Play recipe boot emulates the standard controller that a Wii U adapter
+      // port drives, so the generated origin has the same devices on every peer.
+      if (QuickPlayRecipe::IsActive())
+        m_desired_device_types[i] = ProjectPlusOnline::ContractSIDevice(i, m_desired_device_types[i]);
     }
 
     AddDevice(m_desired_device_types[i], i);
@@ -373,6 +379,7 @@ void SerialInterfaceManager::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
                      si.m_status_reg.hex &= clear_rdst;
                      si.UpdateInterrupts();
                      const u32 response = si.m_channel[i].in_hi.hex;
+                     QuickPlayRecipe::NoteSIRead(static_cast<int>(i), true, response);
                      // Phase 9.1 read-only probe: include release and button samples.
                      if (std::getenv("PPLUS_PHASE91_INPUT_OBSERVE") && i < 2)
                      {
@@ -388,6 +395,8 @@ void SerialInterfaceManager::RegisterMMIO(MMIO::Mapping* mmio, u32 base)
                      auto& si = system.GetSerialInterface();
                      si.m_status_reg.hex &= clear_rdst;
                      si.UpdateInterrupts();
+                     QuickPlayRecipe::NoteSIRead(static_cast<int>(i), false,
+                                                 si.m_channel[i].in_lo.hex);
                      return si.m_channel[i].in_lo.hex;
                    }),
                    MMIO::DirectWrite<u32>(&m_channel[i].in_lo.hex));

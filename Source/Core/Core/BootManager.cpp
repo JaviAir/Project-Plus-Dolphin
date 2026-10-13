@@ -17,6 +17,8 @@
 
 #include "Core/BootManager.h"
 
+#include <variant>
+
 #include <fmt/format.h>
 
 #include "Common/CommonTypes.h"
@@ -27,6 +29,7 @@
 #include "Core/Boot/Boot.h"
 #include "Core/Config/GraphicsSettings.h"
 #include "Core/Config/MainSettings.h"
+#include "Core/Config/SYSCONFSettings.h"
 #include "Core/ConfigLoaders/BaseConfigLoader.h"
 #include "Core/ConfigLoaders/NetPlayConfigLoader.h"
 #include "Core/ConfigManager.h"
@@ -37,6 +40,7 @@
 #include "Core/HW/Sram.h"
 #include "Core/Movie.h"
 #include "Core/NetPlayProto.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 #include "Core/WiiRoot.h"
 
@@ -55,6 +59,10 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 
   if (!StartUp.SetPathsAndGameMetadata(system, *boot))
     return false;
+
+  // Quick Play recipe mode forces its settings into CurrentRun, above the game INIs.
+  const bool quickplay_recipe = !NetPlay::IsNetPlayRunning() && !system.GetMovie().IsMovieActive() &&
+                                QuickPlayRecipe::ActivateForBoot(StartUp.GetGameID());
 
   // Movie settings
   auto& movie = system.GetMovie();
@@ -95,7 +103,8 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
         Config::MAIN_GC_LANGUAGE,
         DiscIO::ToGameCubeLanguage(StartUp.GetLanguageAdjustedForRegion(false, StartUp.m_region)));
 
-    if (system.IsWii())
+    // Recipe mode keeps the guest SYSCONF host-independent (see the Wii root below).
+    if (system.IsWii() && !quickplay_recipe)
     {
       const u32 wii_language =
           static_cast<u32>(StartUp.GetLanguageAdjustedForRegion(true, StartUp.m_region));
@@ -128,7 +137,8 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 
   // Some NTSC Wii games such as Doc Louis's Punch-Out!! and
   // 1942 (Virtual Console) crash if the PAL60 option is enabled
-  if (system.IsWii() && DiscIO::IsNTSC(StartUp.m_region) && Config::Get(Config::SYSCONF_PAL60))
+  if (system.IsWii() && !quickplay_recipe && DiscIO::IsNTSC(StartUp.m_region) &&
+      Config::Get(Config::SYSCONF_PAL60))
     Config::SetCurrent(Config::SYSCONF_PAL60, false);
 
   // Disable loading time emulation for Riivolution-patched games until we have proper emulation.
@@ -165,10 +175,11 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 
   if (system.IsWii())
   {
-    Core::InitializeWiiRoot(Core::WantsDeterminism());
+    // Recipe mode uses a private temporary NAND from Sys/NetplaySave, like NetPlay.
+    Core::InitializeWiiRoot(Core::WantsDeterminism() || quickplay_recipe);
 
     // Ensure any new settings are written to the SYSCONF
-    if (!Core::WantsDeterminism())
+    if (!Core::WantsDeterminism() && !quickplay_recipe)
     {
       Core::BackupWiiSettings();
       ConfigLoaders::SaveToSYSCONF(Config::LayerType::Meta,
@@ -181,6 +192,14 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
           [](const Config::Location& location) {
             return Config::GetActiveLayerForConfig(location) >= Config::LayerType::Movie;
           });
+    }
+    // The guest keeps the temporary NAND's SYSCONF. Pin the configured Wii settings to
+    // their defaults too, so the NetPlay contract does not compare host-only values.
+    if (quickplay_recipe)
+    {
+      for (const auto& setting : Config::SYSCONF_SETTINGS)
+        std::visit([](auto* info) { Config::SetCurrent(*info, info->GetDefaultValue()); },
+                   setting.config_info);
     }
   }
 
@@ -204,6 +223,7 @@ bool BootCore(Core::System& system, std::unique_ptr<BootParameters> boot,
 void RestoreConfig()
 {
   Core::ShutdownWiiRoot();
+  QuickPlayRecipe::Deactivate();
 
   if (Core::WiiRootIsTemporary())
   {

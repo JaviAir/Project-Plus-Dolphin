@@ -77,6 +77,7 @@
 #include "Core/ProjectPlusOnline/LocalInput.h"
 #include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/ProjectPlusOnline/Status.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/State.h"
 #include "Core/System.h"
 #include "Core/WiiUtils.h"
@@ -296,6 +297,8 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   InitCoreCallbacks();
 
   NetPlayInit();
+  // Offline Launcher boots from this frontend prepare the in-game Quick Play origin.
+  QuickPlayRecipe::SetFrontendSupported(true);
 
   auto* status_timer = new QTimer(this);
   connect(status_timer, &QTimer::timeout, this, &MainWindow::PublishQuickPlayStatus);
@@ -2070,8 +2073,28 @@ void MainWindow::PublishQuickPlayPresentation()
   const bool left = std::chrono::steady_clock::now() < m_quickplay_left_until;
   const bool opponent_left = std::chrono::steady_clock::now() < m_quickplay_opponent_left_until;
   QString text;
-  if (supported && !m_exit_requested && m_persistent_retiring &&
-      (left || m_quickplay_opponent_left))
+  const auto recipe = QuickPlayRecipe::GetPhase();
+  if (recipe != QuickPlayRecipe::Phase::Failed)
+    m_quickplay_recipe_failure_until.reset();
+  else if (!m_quickplay_recipe_failure_until)
+    m_quickplay_recipe_failure_until = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+  if (!supported && Core::IsRunning(m_system) && !m_exit_requested &&
+      recipe == QuickPlayRecipe::Phase::Preparing)
+  {
+    // Search stays unavailable until this Core has captured its origin.
+    value.phase = PresentationPhase::Checking;
+    text = tr("Preparing Quick Play…");
+  }
+  else if (!supported && Core::IsRunning(m_system) && !m_exit_requested &&
+           recipe == QuickPlayRecipe::Phase::Failed &&
+           std::chrono::steady_clock::now() < *m_quickplay_recipe_failure_until)
+  {
+    value.phase = PresentationPhase::Error;
+    text = tr("Quick Play unavailable: %1. Local play continues.")
+               .arg(QString::fromStdString(QuickPlayRecipe::FailureReason()));
+  }
+  else if (supported && !m_exit_requested && m_persistent_retiring &&
+           (left || m_quickplay_opponent_left))
   {
     value.phase = PresentationPhase::Setup;
     text = left ? tr("Leaving…") : tr("Opponent left the session");
@@ -2695,7 +2718,8 @@ void MainWindow::PreparePersistentQuickPlay(u32 game)
   ObservePausedQuickPlayCSS();
   PublishQuickPlayPresentation();
   const Core::CPUThreadGuard guard(m_system);
-  if (!client->PreparePersistentSession(game, m_persistent_quickplay->Identity()))
+  if (!client->PreparePersistentSession(game, m_persistent_quickplay->Identity(),
+                                        m_persistent_quickplay->OriginDigest()))
     QTimer::singleShot(0, this, [this, game] {
       if (m_persistent_game == game)
       {

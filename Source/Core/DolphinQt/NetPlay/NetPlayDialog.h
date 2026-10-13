@@ -80,6 +80,8 @@ public:
   void OnMsgStartGame(u32 game_id) override;
   void OnMsgStopGame() override;
   void OnPersistentBarrier(u32 game, bool release) override;
+  void OnPersistentMismatch(const std::string& local_origin,
+                            const std::string& peer_origin) override;
   void OnMsgPowerButton() override;
   void OnPlayerConnect(const std::string& player) override;
   void OnPlayerDisconnect(const std::string& player) override;

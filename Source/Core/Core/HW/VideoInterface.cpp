@@ -29,6 +29,7 @@
 #include "Core/HW/SI/SI.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/Movie.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "DiscIO/Enums.h"
@@ -942,7 +943,10 @@ void VideoInterfaceManager::Update(u64 ticks)
   // dealing with SI polls, but after potentially sending a swap request to the GPU thread
 
   if (is_at_field_boundary)
+  {
     Core::Callback_NewField(m_system);
+    QuickPlayRecipe::OnFieldBoundary(m_system);
+  }
 
   auto& core_timing = m_system.GetCoreTiming();
 

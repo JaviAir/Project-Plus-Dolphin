@@ -1079,7 +1079,9 @@ bool Jit64::DoJit(u32 em_address, JitBlock* b, u32 nextPC)
     {
       auto& cpu = m_system.GetCPU();
       auto& power_pc = m_system.GetPowerPC();
-      if (IsDebuggingEnabled() && power_pc.GetBreakPoints().IsAddressBreakPoint(op.address) &&
+      const auto& breakpoints = power_pc.GetBreakPoints();
+      if (((IsDebuggingEnabled() && breakpoints.IsAddressBreakPoint(op.address)) ||
+           breakpoints.IsCaptureAddress(op.address)) &&
           !cpu.IsStepping())
       {
         gpr.Flush();

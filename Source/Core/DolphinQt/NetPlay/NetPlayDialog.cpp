@@ -1199,6 +1199,23 @@ void NetPlayDialog::OnPersistentBarrier(u32 game, bool release)
   });
 }
 
+void NetPlayDialog::OnPersistentMismatch(const std::string& local_origin,
+                                         const std::string& peer_origin)
+{
+  const auto message =
+      local_origin != peer_origin ?
+          tr("Quick Play refused the join: the two games prepared different starting states "
+             "(yours %1, opponent's %2). Both players need the same Dolphin build, SD card, "
+             "Brawl ISO and launchers.")
+              .arg(QString::fromStdString(local_origin), QString::fromStdString(peer_origin)) :
+          tr("Quick Play refused the join: your Dolphin build or emulation settings differ "
+             "from your opponent's.");
+  QueueOnObject(this, [this, message, generation = m_session_generation.load()] {
+    if (generation == m_session_generation)
+      ReportError(message);
+  });
+}
+
 void NetPlayDialog::OnMsgStopGame()
 {
   QueueOnObject(this, [this, generation = m_session_generation.load()] {

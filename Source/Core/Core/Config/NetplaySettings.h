@@ -16,6 +16,8 @@ namespace Config
 
 extern const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR;
 extern const Info<std::string> NETPLAY_QUICKPLAY_REGION;
+// Prepare in-game Quick Play when the Offline Launcher boots (Core/QuickPlayRecipe.h).
+extern const Info<bool> NETPLAY_QUICKPLAY_SEAMLESS;
 
 extern const Info<std::string> NETPLAY_TRAVERSAL_SERVER;
 extern const Info<u16> NETPLAY_TRAVERSAL_PORT;

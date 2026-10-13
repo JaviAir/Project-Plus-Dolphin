@@ -26,6 +26,7 @@
 #include "Core/ProjectPlusOnline/Presentation.h"
 #include "Core/ProjectPlusOnline/SetupAction.h"
 #include "Core/ProjectPlusOnline/Status.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 #include "InputCommon/GCAdapter.h"
 #include "InputCommon/GCPadStatus.h"
@@ -223,7 +224,11 @@ GCPadStatus CSIDevice_GCController::GetPadStatus()
 
   // For netplay, the local controllers are polled in GetNetPads(), and
   // the remote controllers receive their status there as well
-  if (!NetPlay::IsNetPlayRunning())
+  if (!NetPlay::IsNetPlayRunning() && QuickPlayRecipe::NeutralPad(m_device_number, &pad_status))
+  {
+    // Quick Play origin preparation: no physical input or local commands until capture.
+  }
+  else if (!NetPlay::IsNetPlayRunning())
   {
     // A persistent restore keeps this standard controller on local port 1 even
     // when a Wii U adapter port drives it; sample like NetPlay local pads.

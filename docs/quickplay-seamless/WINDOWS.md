@@ -6,16 +6,22 @@ in-game flow on Windows, but it has **not been built or run on Windows yet**.
 ## What changed for Windows
 
 - The persistent flow accepted only the Qt `xcb` platform. It now accepts `xcb`
-  (X11 or XWayland) and `windows`. It requires single-core mode (Dual Core off) and a
-  separate render window (Render to Main Window off). Any graphics backend is allowed:
+  (X11 or XWayland) and `windows`. It requires single-core mode and a
+  separate render window (Render to Main Window off; Dual Core is forced off while
+  Quick Play is prepared). Any graphics backend is allowed:
   the paused redraw only uses Dolphin's backend-independent drawing. Only OpenGL has
   been tested; Direct3D 11 on Windows is the first test of another backend. The
   backend is not part of the compared settings, so peers may use different backends.
 - `DolphinQt.vcxproj` now builds `QuickPlay\PersistentSession.cpp` (before this the
   branch could not link on Windows) and defines `QUICKPLAY_NO_BULK_SCAN_TRIAL`, so
   Windows builds use the no-scan policy. The CMake option now defaults to `ON` too.
-- If admission rejects the bundle's build or configuration, the log now lists each
-  differing setting (`Persistent QuickPlay: bundle expects …` / `running config has …`).
+- Quick Play no longer uses a shared `QuickPlay\common-css.sav` bundle. Booting the
+  Offline Launcher generates the starting state locally under a fixed recipe
+  (`Core\QuickPlayRecipe.cpp`, registered in `DolphinLib.props`); see
+  `Source/Core/DolphinQt/QuickPlay/PERSISTENT.md`. The recipe forces single-core and
+  the other compared settings for that run. Admission logs every compared setting
+  (`Persistent QuickPlay: config …`), so two logs can be diffed when the contract
+  identities differ.
 
 ## Build
 
@@ -55,55 +61,76 @@ From a Project+ maintainer, for ordinary P+ NetPlay:
 > has to know that you're both starting from the *exact same state* to keep everything
 > in sync
 
-Seamless Quick Play relies on the same rule, with a few more inputs because it starts
-from a saved state instead of a fresh boot:
+Seamless Quick Play follows the same rule. There is no shared savestate or
+`QuickPlay` folder any more: each Dolphin boots the Offline Launcher under a fixed
+recipe and generates the character-select starting state itself
+(`User\QuickPlay\generated\origin.sav`, rewritten on every launch). The build forces
+the emulation settings that matter, so only content and build must match:
 
-| Must be identical | Where | Checked by the no-scan build? |
+| Must be identical | Where | Checked? |
 | --- | --- | --- |
-| Dolphin build (same commit) | `Dolphin.exe` / Linux binary | Yes: NetPlay version and Quick Play identity |
-| Brawl dump | plain `.iso` | Only the 32-byte header (game ID `RSBE01`); compare `Get-FileHash` / `sha256sum` with the manifest's `iso` by hand |
-| SD card image | `Wii\sd.raw` | No (it must exist) |
-| CSS checkpoint and manifest | `QuickPlay\common-css.sav`, `common-css.json` | Checkpoint version, PC and ticks only; the manifest is part of the identity |
-| NAND | `Wii\` | No |
-| Launchers | `Launcher\` | Declared identity plus file size |
-| Dolphin settings that affect emulation | `Config\`, `GameSettings\` | Yes: the configuration identity |
+| Dolphin build (same commit) | `Dolphin.exe` / Linux binary | Yes: NetPlay version and Quick Play contract |
+| Emulation settings | forced by the build while Quick Play is prepared | Yes: contract identity |
+| Brawl dump | plain `.iso` | Only the 32-byte header (game ID `RSBE01`) |
+| SD card image | `Wii\sd.raw` from the official P+ v3.2 Netplay download | Indirectly: origin digest |
+| Launchers | `Launcher\Project+ Offline Launcher.dol`, `Project+ Netplay Launcher.dol` | Indirectly: origin digest |
 
-Anything marked "No" is trusted, the same way ordinary P+ NetPlay trusts the SD card.
-A difference there does not produce an error; it shows up later as a desync. Copying one
-working `User` folder and one ISO to every machine (below) is what keeps them identical.
+Each peer logs an **origin digest** when preparation finishes and sends it when
+joining. If the digests differ, the join is refused on both sides with
+"Quick Play refused the join: the two games prepared different starting states"
+instead of a desync. Matching digests on a Linux and a Windows machine is the main
+thing this smoke test checks. Differences the character select screen does not
+reveal (for example a different stage file on the SD) can still desync later, as
+in ordinary P+ NetPlay, so compare hashes by hand when in doubt
+(`Get-FileHash` / `sha256sum`). Reference values on the Linux test machine:
 
-## Set up the Windows user folder
+| File | SHA256 |
+| --- | --- |
+| `Wii\sd.raw` | `cfe5d86976092df50dfdcb21c627d19ba305aa5c9175827a18ca816fc1402d2d` |
+| `Launcher\Project+ Offline Launcher.dol` | `db143a7592a7233664af19492074f560df1f5c2f21fb3fae3c19ab5702377205` |
+| `Launcher\Project+ Netplay Launcher.dol` | `74a0decf1595725928c8830bddc17207669323883112640b0e25e9f2da95c0da` |
+| Brawl ISO (`RSBE01` rev 1) | `ca53a7800d5dda83d219f835da47c87ad4e769152ce101f2ead6a4b000111874` |
 
-Launching `Dolphin.exe` with no arguments is fine, but Quick Play only works if its
-bundle is in the User folder that build actually uses. Without `-u`, a Windows build
-picks, in order: `User\` next to the exe if `portable.txt` is there, the registry
-`UserConfigPath` (often an older Dolphin's folder), `Documents\Dolphin Emulator`, then
-`AppData\Roaming\Dolphin Emulator`. The build does not copy `portable.txt`. Use
-**File > Open User Folder** to see which one it picked. If that folder has no
-`QuickPlay\common-css.json`, the search hint never appears.
+## Set up a fresh Windows user folder
 
-To use a folder next to the exe, create an empty `portable.txt` in `Binary\x64` and
-copy the profile to `Binary\x64\User`. The steps below use `C:\pplus\User` with
-`-u`; any of these works as long as everything sits in the same folder.
+Start from an empty user folder; do not copy a `User` folder or `QuickPlay` files
+from another machine. Without `-u`, a Windows build picks, in order: `User\` next to
+the exe if `portable.txt` is there, the registry `UserConfigPath`, `Documents\Dolphin
+Emulator`, then `AppData\Roaming\Dolphin Emulator`. The steps below use
+`C:\pplus\User` with `-u`; File > Open User Folder shows which folder a build uses.
 
-1. Copy a working Linux trial profile's whole `User` folder to Windows (for example
-   `planning/quickplay/phase9/ui96-manual/qp-seamless-scan/b/User` to
-   `C:\pplus\User`). It contains everything that must match: `QuickPlay\`
-   (`common-css.sav`, `common-css.json`), `Wii\` (NAND and `sd.raw`), `Launcher\`,
-   `GameSettings\` and `Config\`.
-2. Copy the **same ISO file** (a plain `.iso`, not RVZ/WBFS; see "To do" below). `common-css.json`'s
-   `iso` value is the SHA256 of the original. `Get-FileHash <iso>` must print the same
-   hash (Windows prints it in uppercase).
-3. Edit `C:\pplus\User\Config\Dolphin.ini` and change only these lines to Windows paths:
-   `WiiSDCardPath`, `NANDRootPath`, `ISOPath0` (the `Launcher` folder) and `DefaultISO`.
-   Set `Nickname` and the `[NetPlay]` network lines (see below). Leave everything else
-   alone: the settings must match the bundle's `config` exactly.
-4. In Dolphin, map **Controller 1** to your controller as a Standard Controller (an
-   Xbox pad, or a GC adapter in PC mode). Leave Controller 2 unmapped. A "GameCube
-   Adapter for Wii U" port 1 also works, but Windows needs the WinUSB driver for it
-   (Zadig).
-5. To capture logs: View > Show Log Configuration, verbosity **Info**, enable
+1. From the official **Project+ v3.2 Netplay** download for Windows, copy into
+   `C:\pplus\User`:
+   - `Launcher\` (both `Project+ … Launcher.dol` files with their `.png`/`.xml`)
+   - `GameSettings\`
+   - `Wii\sd.raw`
+2. Put a **plain `.iso`** Brawl dump somewhere (not RVZ/WBFS; see "To do" below).
+3. Launch once (below), close Dolphin, then in Dolphin set:
+   - Config > Paths: add `C:\pplus\User\Launcher` as a game folder, and set
+     Default ISO to the Brawl `.iso`. The SD card path defaults to
+     `User\Wii\sd.raw`; leave it.
+   - Tools > Quick Play Settings: coordinator URL and region (same on both
+     machines). "Prepare in-game Quick Play when the Offline Launcher starts" must
+     be checked (default).
+   - NetPlay nickname, and the traversal settings below.
+   - Controllers: Project+ Dolphin sets every port to "GameCube Adapter for Wii U" by
+     default; without an adapter, controller 1 then reads as unplugged in game. Set
+     **Controller 1** = Standard Controller mapped to your pad (an Xbox
+     pad, or a GC adapter in PC mode), or "GameCube Adapter for Wii U" (needs the
+     WinUSB driver via Zadig). Leave the other ports alone; the build forces
+     port 2 = Standard Controller and ports 3/4 empty while Quick Play is prepared.
+   You do not need to change emulation or graphics settings: the build forces the
+   ones peers must share for that run without saving them.
+4. To capture logs: View > Show Log Configuration, verbosity **Info**, enable
    **Write to File** and the **NetPlay** log type. The log is `User\Logs\dolphin.log`.
+
+The Linux equivalent is `python3 Plus-Dolphin/Tools/quickplay/launch-scan-trial.py
+--prepare --profile <name>` (from the pplus root), which creates a fresh profile the
+same way.
+
+While Quick Play preparation is on, the Offline Launcher runs on a temporary Wii
+NAND: Brawl's own saves and tags are not loaded or kept. Uncheck the setting for
+ordinary offline play with saves.
 
 ## Network for a same-house test
 
@@ -130,17 +157,23 @@ $env:QUICKPLAY_DISABLE_UPDATE_CHECK = "1"
 
 ## First Windows checks — report each result
 
-1. The game boots in a separate window and reaches the character select screen.
-   Is the `L + R + D-pad Up — Search` hint shown?
+1. The game boots in a separate window. "Preparing Quick Play…" shows in the top
+   right for a few seconds (the boot runs fast and muted), then the character
+   select screen shows the `L + R + D-pad Up — Search` hint. Note how long the
+   preparation took, and send the log line
+   `Quick Play recipe portable-css-ab/2: origin digest …` from both machines.
+   **The two origin digests must be equal.** If preparation fails, the overlay
+   says why and local play continues; send the `Quick Play recipe:` lines.
 2. Search: does `Searching in <region>…` appear immediately? Then press B to cancel.
 3. Pair Windows with Linux. Do both reach the shared CSS, a full match and the
-   results screen? Try both host directions.
+   results screen? Try both host directions. A digest mismatch shows "Quick Play
+   refused the join…" on both sides; send both logs.
 4. Leave with L+R+D-pad Right (hold 1 s) from each side. Do both return to local CSS
    and can both search again?
-5. Note any error text, and send the `Persistent QuickPlay:` lines from both logs.
-   A Windows-only crash, black screen or frozen window during the handoff points
-   at the graphics restore and redraw path (Direct3D 11 or OpenGL/WGL), which is the
-   main unverified part.
+5. Note any error text, and send the `Persistent QuickPlay:` and `Quick Play recipe:`
+   lines from both logs. A Windows-only crash, black screen or frozen window during
+   the handoff points at the graphics restore and redraw path (Direct3D 11 or
+   OpenGL/WGL), which is the main unverified part.
 
 ## To do (nice to have)
 

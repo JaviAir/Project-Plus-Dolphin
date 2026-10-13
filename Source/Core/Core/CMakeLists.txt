@@ -577,6 +577,8 @@ add_library(core
   PowerPC/SignatureDB/MEGASignatureDB.h
   PowerPC/SignatureDB/SignatureDB.cpp
   PowerPC/SignatureDB/SignatureDB.h
+  QuickPlayRecipe.cpp
+  QuickPlayRecipe.h
   State.cpp
   State.h
   SyncIdentifier.h
@@ -698,6 +700,7 @@ PRIVATE
   LZO::LZO
   LZ4::LZ4
   ZLIB::ZLIB
+  xxhash::xxhash
 )
 
 # The overlay can pull NetPlayServer from core after uicommon was scanned.

@@ -1129,22 +1129,33 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
       break;
     if (mid == MessageID::PersistentReady)
     {
-      std::string identity;
-      packet >> identity;
-      if (!packet || identity.size() != 64 || m_persistent_attach_sent)
+      std::string identity, origin;
+      packet >> identity >> origin;
+      if (!packet || identity.size() != 64 || origin.size() != 16 || m_persistent_attach_sent)
         break;
-      const auto [it, inserted] = m_persistent_ready.emplace(player.pid, identity);
-      if (!inserted && it->second != identity)
+      const auto ready = std::make_pair(identity, origin);
+      const auto [it, inserted] = m_persistent_ready.emplace(player.pid, ready);
+      if (!inserted && it->second != ready)
         return 1;
       if (m_persistent_ready.size() != 2)
         break;
-      if (m_persistent_ready.at(1) != m_persistent_ready.at(2))
+      const auto& [identity1, origin1] = m_persistent_ready.at(1);
+      const auto& [identity2, origin2] = m_persistent_ready.at(2);
+      if (identity1 != identity2 || origin1 != origin2)
       {
+        // Name the difference to both peers before stopping, so neither reports a leave.
+        sf::Packet mismatch;
+        mismatch << MessageID::PersistentMismatch << game << origin1 << origin2
+                 << (identity1 == identity2);
+        SendToClients(mismatch);
         sf::Packet stop;
         stop << MessageID::StopGame;
         SendToClients(stop);
         m_is_running = false;
-        ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: checkpoint/content contract mismatch");
+        ERROR_LOG_FMT(NETPLAY,
+                      "Persistent QuickPlay: join refused; origin digests {} / {}, contract "
+                      "identities {} / {}",
+                      origin1, origin2, identity1, identity2);
         break;
       }
       m_persistent_attach_sent = true;

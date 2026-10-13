@@ -370,7 +370,8 @@ std::string RunningNetPlayConfigIdentity()
     values.Set(info, ProjectPlusOnline::ContractSIDevice(port, Config::Get(info)));
     result += std::string("SI device") + "=" + *values.Get<std::string>(info.GetLocation()) + "\n";
   }
-  check(Config::MAIN_DSP_THREAD, "DSPThread");
+  // DSPThread is left out: Core resets it from the host's core count at every boot, and
+  // persistent sessions require DSP HLE, which ignores it.
   check(Config::MAIN_CUSTOM_RTC_ENABLE, "CustomRTCEnable");
   check(Config::MAIN_CUSTOM_RTC_VALUE, "CustomRTCValue");
   check(Config::GFX_SHADER_COMPILATION_MODE, "ShaderCompilationMode");
