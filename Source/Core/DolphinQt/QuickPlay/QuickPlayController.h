@@ -47,7 +47,9 @@ public:
   ~QuickPlayController() override;
 
   State GetState() const { return m_state; }
-  const QString& GetRegion() const { return m_region; }
+  // Regions searched by this attempt, and the agreed region once matched.
+  const QStringList& GetRegions() const { return m_regions; }
+  const QString& GetMatchRegion() const { return m_match_region; }
   const QString& GetErrorMessage() const { return m_error_message; }
   bool Start();
   void Cancel();
@@ -89,7 +91,8 @@ private:
   bool m_creating_host = false;
   QTimer m_setup_timer;
 
-  QString m_region;
+  QStringList m_regions;
+  QString m_match_region;
   QString m_error_message;
   State m_state = State::Idle;
   std::uint64_t m_attempt = 0;

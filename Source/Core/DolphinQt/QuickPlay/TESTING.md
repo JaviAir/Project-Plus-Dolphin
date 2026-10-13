@@ -31,14 +31,17 @@ Windows behaves better. If needed, set **Config → Paths → Launcher Path** to
 normal Project+ Launcher directory containing `Netplay Launcher.dol`, then
 refresh/restart. Quick Play inherits this issue; investigation is deferred.
 
-## Coordinator and region
+## Coordinator, regions and host preference
 
 Before starting Quick Play, use **gear button beside Quick Play**. Opening
 Settings must send no HTTP request and create no matchmaking/NetPlay state. Edit
-coordinator and region, Save, then click the main Quick Play area. The next attempt
+coordinator, regions and host preference, Save, then click the main Quick Play area. The next attempt
 uses current config without restarting; a running attempt retains its snapshot.
-Defaults are `http://127.0.0.1:3000` and United States — East (`us-east`).
-Loopback reaches only your computer. See [all 12 labels/values](README.md#configuration).
+Defaults are `http://127.0.0.1:3000`, United States — East (`us-east`) and
+No preference. A profile without `QuickPlayRegions` uses its old `QuickPlayRegion`.
+For scripted runs, override with `-C Dolphin.NetPlay.QuickPlayRegions=us-east,europe`
+and `-C Dolphin.NetPlay.QuickPlayHostPreference=host`.
+Loopback reaches only your computer. See [all 11 labels/values](README.md#configuration).
 
 Legacy mappings are `na-east` → `us-east`, `na-central` → `us-midwest`,
 `na-west` → `us-west`, and `eu` → `europe`. Known values and aliases are
@@ -51,8 +54,8 @@ will not pair with clients sending the new canonical values. Use matching update
 clients; no server aliases or matching changes are introduced.
 
 Unknown valid custom values appear as **Custom (preserved)** and survive Save
-exactly. Invalid custom values require choosing a listed region.
-Both players need the same endpoint, canonical (or exact custom) region, protocol,
+exactly while ticked. Invalid values are dropped. At least one region is required.
+Both players need the same endpoint, at least one shared region, protocol 2,
 and committed build revision, plus compatible Project+ game data. Platform does
 not split Windows/Linux queues.
 
@@ -85,7 +88,7 @@ SHA do not establish matching artifacts.
       instrumentation without retaining tickets/nonces); the old one gets no new
       admission. Any prior attempt cleanup still goes to its original endpoint.
 - [ ] Change region, Save, cancel/reopen again without restarting. Verify the queue
-      JSON contains the canonical selected value. Exercise all 12 selections and friendly labels.
+      JSON contains the canonical selected value. Exercise all 11 selections and friendly labels.
 - [ ] Load profiles with each legacy alias, including ` NA-EAST `; Settings selects
       the mapped label and Save writes the canonical value (`us-east` in this case).
       Starting before opening Settings must also send the mapped region. Unknown
@@ -191,8 +194,9 @@ Dolphin SHA, coordinator SHA, artifact checksums, OS, topology and result.
 - [ ] Close Dolphin during an active Quick Play request: no crash/persistent hang.
 - [ ] Cancel/reopen promptly: late callbacks do not change the newer attempt.
 
-The older queued player hosts. Queue order must be deliberate when recording role
-coverage. Existing synchronous NetPlay setup can briefly pause UI/cancellation.
+Roles follow complementary host preferences (host+join, or host/join+none);
+otherwise the older queued player hosts. Queue order and preferences must be
+deliberate when recording role coverage. Existing synchronous NetPlay setup can briefly pause UI/cancellation.
 
 ## Known limitations and reporting
 

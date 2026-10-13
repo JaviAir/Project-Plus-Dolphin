@@ -10,6 +10,7 @@
 #include <QByteArray>
 #include <QObject>
 #include <QString>
+#include <QStringList>
 
 #include "Common/WorkQueueThread.h"
 
@@ -36,13 +37,16 @@ public:
     QString ticket;
     QString match_id;
     QString host_code;
+    // Agreed region of a match; displayable.
+    QString region;
   };
   using Callback = std::function<void(Result)>;
 
   explicit QuickPlayClient(QObject* parent = nullptr);
   ~QuickPlayClient() override;
 
-  void Start(const QString& base_url, const QString& region, Callback callback);
+  void Start(const QString& base_url, const QStringList& regions, const QString& host_preference,
+             Callback callback);
   // Shared by settings and admission. Returns a user-facing error, or an empty string.
   static QString NormalizeCoordinatorUrl(const QString& input, QString* normalized);
   struct Region
@@ -50,10 +54,18 @@ public:
     QString value;
     QString label;
   };
-  static std::array<Region, 12> GetRegions();
+  static std::array<Region, 11> GetRegions();
   static QString GetRegionLabel(const QString& region);
   static QString NormalizeRegion(const QString& region);
   static bool IsValidRegion(const QString& region);
+  static constexpr qsizetype MAX_REGIONS = 12;
+  // Normalized, valid, distinct tokens in order, at most MAX_REGIONS.
+  static QStringList ParseRegions(const QString& comma_separated);
+  // Saved regions, else the legacy single region when none are saved yet, else the default.
+  static QStringList LoadRegions();
+  // "host", "none" or "join"; anything else is "none".
+  static QString NormalizeHostPreference(const QString& preference);
+  static QString LoadHostPreference();
   void Poll();
   void PollMatch(const QString& match_id);
   static Result ParseMatchResponse(int status, const QByteArray& body);

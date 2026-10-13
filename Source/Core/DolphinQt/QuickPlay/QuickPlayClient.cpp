@@ -8,23 +8,26 @@
 #include <chrono>
 #include <utility>
 
+#include <QJsonArray>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QJsonParseError>
 #include <QUrl>
 #include <QUuid>
 
+#include "Common/Config/Config.h"
 #include "Common/HttpRequest.h"
 #include "Common/Logging/Log.h"
 #include "Common/TraversalProto.h"
 #include "Common/Version.h"
+#include "Core/Config/NetplaySettings.h"
 
 namespace
 {
 using Codes = Common::HttpRequest::AllowedReturnCodes;
 constexpr auto REQUEST_TIMEOUT = std::chrono::milliseconds{5000};
 constexpr auto CANCEL_TIMEOUT = std::chrono::milliseconds{3000};
-constexpr int QUICKPLAY_PROTOCOL = 1;
+constexpr int QUICKPLAY_PROTOCOL = 2;
 
 bool IsField(const QString& value, qsizetype limit)
 {
@@ -124,7 +127,8 @@ QuickPlayClient::Result QuickPlayClient::ParseResponse(int status, const QByteAr
   }
   if (state == QStringLiteral("searching"))
   {
-    if (object.contains(QStringLiteral("match_id")) || object.contains(QStringLiteral("role")))
+    if (object.contains(QStringLiteral("match_id")) || object.contains(QStringLiteral("role")) ||
+        object.contains(QStringLiteral("region")))
       return result;
     result.state = State::Searching;
   }
@@ -132,10 +136,13 @@ QuickPlayClient::Result QuickPlayClient::ParseResponse(int status, const QByteAr
   {
     const auto match_id = object.value(QStringLiteral("match_id")).toString();
     const auto role = object.value(QStringLiteral("role")).toString();
+    const auto region = object.value(QStringLiteral("region")).toString();
+    // A newcomer can host when host preferences say so.
     if (!IsId(match_id) || (role != QStringLiteral("host") && role != QStringLiteral("client")) ||
-        (joining && role != QStringLiteral("client")))
+        !IsValidRegion(region))
       return result;
     result.match_id = match_id;
+    result.region = region;
     result.state = role == QStringLiteral("host") ? State::MatchedHost : State::MatchedClient;
   }
   else
@@ -166,10 +173,9 @@ QString QuickPlayClient::NormalizeCoordinatorUrl(const QString& input, QString* 
   return {};
 }
 
-std::array<QuickPlayClient::Region, 12> QuickPlayClient::GetRegions()
+std::array<QuickPlayClient::Region, 11> QuickPlayClient::GetRegions()
 {
   return {{
-      {QStringLiteral("us-nationwide"), tr("United States — Nationwide")},
       {QStringLiteral("us-east"), tr("United States — East")},
       {QStringLiteral("us-south"), tr("United States — South")},
       {QStringLiteral("us-midwest"), tr("United States — Midwest")},
@@ -205,6 +211,9 @@ QString QuickPlayClient::NormalizeRegion(const QString& region)
     return QStringLiteral("us-west");
   if (normalized == QStringLiteral("eu"))
     return QStringLiteral("europe");
+  // Retired: tick the individual US regions instead. Invalid, so dropped from saved lists.
+  if (normalized == QStringLiteral("us-nationwide"))
+    return {};
 
   for (const auto& region_choice : GetRegions())
   {
@@ -220,9 +229,52 @@ bool QuickPlayClient::IsValidRegion(const QString& region)
   return IsField(region, 32);
 }
 
-void QuickPlayClient::Start(const QString& base_url, const QString& region_input, Callback callback)
+QStringList QuickPlayClient::ParseRegions(const QString& comma_separated)
 {
-  const QString region = NormalizeRegion(region_input);
+  QStringList regions;
+  for (const auto& token : comma_separated.split(QLatin1Char(',')))
+  {
+    const QString region = NormalizeRegion(token.trimmed());
+    if (regions.size() < MAX_REGIONS && IsValidRegion(region) && !regions.contains(region))
+      regions.append(region);
+  }
+  return regions;
+}
+
+QStringList QuickPlayClient::LoadRegions()
+{
+  const auto saved =
+      ParseRegions(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGIONS)));
+  if (!saved.isEmpty())
+    return saved;
+  const auto legacy =
+      ParseRegions(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION)));
+  if (!legacy.isEmpty())
+    return legacy;
+  return ParseRegions(QString::fromStdString(Config::NETPLAY_QUICKPLAY_REGION.GetDefaultValue()));
+}
+
+QString QuickPlayClient::NormalizeHostPreference(const QString& preference)
+{
+  const QString normalized = preference.trimmed().toLower();
+  if (normalized == QStringLiteral("host") || normalized == QStringLiteral("join"))
+    return normalized;
+  return QStringLiteral("none");
+}
+
+QString QuickPlayClient::LoadHostPreference()
+{
+  return NormalizeHostPreference(
+      QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_HOST_PREFERENCE)));
+}
+
+void QuickPlayClient::Start(const QString& base_url, const QStringList& regions,
+                            const QString& host_preference_input, Callback callback)
+{
+  const QString host_preference = NormalizeHostPreference(host_preference_input);
+  const bool regions_valid = !regions.isEmpty() && regions.size() <= MAX_REGIONS &&
+                             std::all_of(regions.begin(), regions.end(), IsValidRegion) &&
+                             QStringList(regions).removeDuplicates() == 0;
   Cancel();
   auto attempt = std::make_shared<Attempt>();
   m_attempt = attempt;
@@ -233,8 +285,7 @@ void QuickPlayClient::Start(const QString& base_url, const QString& region_input
   const QString url_error = NormalizeCoordinatorUrl(base_url, &normalized_url);
   const QString build = QString::fromStdString(Common::GetScmRevGitStr() + "-persistent1");
   const QString version = QString::fromStdString(Common::GetScmDescStr());
-  if (!url_error.isEmpty() || !IsValidRegion(region) || !IsField(build, 128) ||
-      !IsField(version, 64))
+  if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(version, 64))
   {
     Deliver(attempt, {State::Error,
                       !url_error.isEmpty() ?
@@ -252,7 +303,8 @@ void QuickPlayClient::Start(const QString& base_url, const QString& region_input
       {QStringLiteral("protocol"), QUICKPLAY_PROTOCOL},
       {QStringLiteral("build"), build},
       {QStringLiteral("pplus_version"), version},
-      {QStringLiteral("region"), region},
+      {QStringLiteral("regions"), QJsonArray::fromStringList(regions)},
+      {QStringLiteral("host_preference"), host_preference},
       {QStringLiteral("platform"), Platform()},
       {QStringLiteral("player_nonce"), QUuid::createUuid().toString(QUuid::WithoutBraces)}};
   const auto body = QJsonDocument(fields).toJson(QJsonDocument::Compact).toStdString();

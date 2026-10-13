@@ -25,23 +25,26 @@ clicked and remains disabled until the attempt is dismissed, including errors.
 Successful lobby handoff closes the searching dialog automatically on both host
 and client, restoring settings access without closing the connected lobby.
 The searching dialog has no Settings button. It displays
-**Region: <friendly label>** from the attempt's region snapshot (or the exact custom
-value). Only one region is searched; multi-region matching remains deferred.
+**Region: <friendly label>** for a one-region search, or **Regions: a, b, …** for
+several, from the attempt's snapshot (custom values are shown exactly). Once
+matched it shows the agreed region from the coordinator.
 
 Save applies without restarting Dolphin or editing INI files. Cancel discards
 unsaved edits. Settings reloads current config whenever reopened.
 
-Settings use the existing `Main.NetPlay.QuickPlayCoordinator` and
-`Main.NetPlay.QuickPlayRegion` definitions in `Core/Config/NetplaySettings.cpp`.
-Defaults are `http://127.0.0.1:3000` and `us-east`. Save updates effective config
+Settings use `Main.NetPlay.QuickPlayCoordinator`, `Main.NetPlay.QuickPlayRegions`
+(comma-separated tokens) and `Main.NetPlay.QuickPlayHostPreference` (`host`,
+`none` or `join`) from `Core/Config/NetplaySettings.cpp`. Defaults are
+`http://127.0.0.1:3000`, `us-east` and `none`. While `QuickPlayRegions` is empty,
+the legacy single `QuickPlayRegion` value is read instead; Save writes
+`QuickPlayRegions` and removes the legacy key from the base config. Save updates effective config
 and persists the base config via Dolphin's config system. If an initial value came
-from a temporary `-C Main.NetPlay.QuickPlayCoordinator=...` or region override,
+from a temporary `-C Dolphin.NetPlay.QuickPlayCoordinator=...` or region override,
 Save explicitly replaces it for this run and persists the chosen value. Supplying
 that command-line override again on a later launch still overrides the saved value.
 
 | Display label | Saved/wire value |
 | --- | --- |
-| United States — Nationwide | `us-nationwide` |
 | United States — East | `us-east` |
 | United States — South | `us-south` |
 | United States — Midwest | `us-midwest` |
@@ -58,18 +61,28 @@ Legacy mappings are `na-east` → `us-east`, `na-central` → `us-midwest`,
 `na-west` → `us-west`, and `eu` → `europe`. Known values and aliases are
 case/whitespace normalized when Settings loads and before queue admission, even
 if Settings has never been opened. Opening/Cancel does not rewrite config; Save
-persists the canonical selection. Unknown custom values retain their exact spelling
+persists the canonical selection. Invalid and duplicate tokens are dropped, and at
+most 12 are kept. The retired `us-nationwide` region is dropped; if nothing is left,
+the default `us-east` is used. Unknown custom values retain their exact spelling
 and case. The canonical wire/config spelling is `caribbean`, labeled Caribbean.
 Because Rust still compares exact strings, older clients sending legacy values
 will not pair with clients sending the new canonical values. Use matching updated
 clients; no server aliases or matching changes are introduced.
 
-An unknown region appears as **Custom (preserved): value**;
-it stays byte-for-byte unchanged unless another region is selected. Invalid custom
-values must be replaced with a listed region before saving. Valid custom values
-are 1–32 printable ASCII characters without whitespace. The dropdown is not
-editable. Rust still matches regions exactly; there is no geographic inference,
-expansion, or server-side case folding.
+Regions are a checklist; at least one must be ticked. A saved unknown region
+appears as an extra checked **Custom (preserved): value** entry and keeps its exact
+spelling while ticked. Valid custom values are 1–32 printable ASCII characters
+without whitespace. Two players pair when their region lists share at least one
+exact token; there is no geographic inference, widening over time, or server-side
+case folding.
+
+**Host Preference** (`Prefer to host` / `No preference` / `Prefer to join`) is soft.
+The coordinator honours it when the two players complement each other, otherwise
+the player who queued first hosts. It never prevents or delays a match.
+
+The coordinator field is masked like a password, since a private coordinator URL
+is effectively an access secret. **Show** / **Hide** beside it toggles the mask;
+reopening Settings masks it again.
 
 URLs require absolute HTTP/HTTPS with a host and optional port/path prefix.
 Surrounding whitespace and trailing slashes are removed; meaningful paths are
@@ -90,31 +103,27 @@ QObject teardown. DNS timeout bounds require an asynchronous curl resolver, as
 with existing Quick Play requests.
 
 The controller already reads current in-memory config at every Start. Each attempt
-retains its own endpoint/region snapshot, so subsequent config changes cannot
-redirect polls, host publication, or cancellation to a different coordinator,
-or change the displayed search region.
-
-Multi-region selection is a deferred post-Phase-7 stretch goal. A future
-`regions = ["us-east", "us-south"]` representation and non-empty-intersection
-matching require deliberate Dolphin config, queue admission JSON, Rust schema,
-matching logic, migration/backward compatibility, and UI design. Current matching
-continues to use one region string. Phase 8 is unchanged and has not begun.
+retains its own endpoint/region/preference snapshot, so subsequent config changes
+cannot redirect polls, host publication, or cancellation to a different coordinator,
+or change the displayed search regions.
 
 ## Exact fingerprint
 
 | Field | Value |
 | --- | --- |
-| `protocol` | Integer `1`, the Quick Play API/compatibility protocol |
+| `protocol` | Integer `2`, the Quick Play API/compatibility protocol |
 | `build` | Exact `Common::GetScmRevGitStr()` (`SCM_REV_STR`, generated from `git rev-parse HEAD`) |
 | `pplus_version` | Exact `Common::GetScmDescStr()` (`SCM_DESC_STR`), informational Dolphin/P+ build description |
-| `region` | `QuickPlayRegion`, default `us-east` |
+| `regions` | `QuickPlayRegions` as a JSON array, default `["us-east"]` |
+| `host_preference` | `QuickPlayHostPreference`: `host`, `none` or `join` |
 | `platform` | `windows`, `linux`, `macos`, or `other` |
 | `player_nonce` | New `QUuid::createUuid()` per attempt, without braces |
 
 The validated source baseline is `341e758e56c29a6c2268053ef3b0b60ca6de9cc9`.
 Use the actual artifact's generated revision, not a hard-coded value. CMake derives
 the informational description from `git describe --always --long --dirty`;
-the Windows generator omits `--dirty`. Only protocol/build/region determine pairing.
+the Windows generator omits `--dirty`. Only protocol, build and a shared region
+determine pairing.
 
 The build key matches Dolphin's existing NetPlay revision handshake and has no
 platform suffix. **Uncommitted source differences are not represented in this

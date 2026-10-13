@@ -5,6 +5,8 @@
 
 #include <atomic>
 #include <memory>
+#include <utility>
+#include <vector>
 
 #include <QDialog>
 
@@ -12,6 +14,7 @@
 
 class QCheckBox;
 class QComboBox;
+class QGridLayout;
 class QLabel;
 class QLineEdit;
 class QPushButton;
@@ -33,9 +36,15 @@ private:
   void InvalidateTest();
 
   QLineEdit* m_coordinator;
-  QComboBox* m_region;
+  QPushButton* m_show_coordinator;
+  void AddRegion(const QString& value, const QString& label);
+
+  // Listed regions first, then preserved custom ones.
+  std::vector<std::pair<QCheckBox*, QString>> m_regions;
+  QGridLayout* m_region_grid;
+  std::size_t m_canonical_region_count;
+  QComboBox* m_host_preference;
   QCheckBox* m_seamless;
-  int m_canonical_region_count;
   QLabel* m_result;
   QPushButton* m_test;
   std::shared_ptr<std::atomic<bool>> m_test_cancelled;

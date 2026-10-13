@@ -2131,9 +2131,14 @@ void MainWindow::PublishQuickPlayPresentation()
       case State::Searching:
       {
         value.phase = PresentationPhase::Searching;
-        // The region captured when this attempt started, not the current setting.
-        const auto region = QuickPlayClient::GetRegionLabel(m_quickplay_controller->GetRegion());
-        text = region.isEmpty() ? tr("Searching…") : tr("Searching in %1…").arg(region);
+        // The regions captured when this attempt started, not the current setting.
+        const auto& regions = m_quickplay_controller->GetRegions();
+        if (regions.size() == 1)
+          text = tr("Searching in %1…").arg(QuickPlayClient::GetRegionLabel(regions.front()));
+        else if (regions.size() > 1)
+          text = tr("Searching in %n regions…", "", regions.size());
+        else
+          text = tr("Searching…");
         break;
       }
       case State::MatchedHost:

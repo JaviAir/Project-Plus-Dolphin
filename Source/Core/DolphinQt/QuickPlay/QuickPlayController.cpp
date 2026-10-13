@@ -41,11 +41,12 @@ bool QuickPlayController::Start()
   ++m_attempt;
   m_entered_queue = false;
   m_error_message.clear();
-  m_region = QuickPlayClient::NormalizeRegion(
-      QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION)));
+  m_regions = QuickPlayClient::LoadRegions();
+  m_match_region.clear();
   SetState(State::Searching);
   m_client.Start(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)),
-                 m_region, [this, attempt = m_attempt](QuickPlayClient::Result result) {
+                 m_regions, QuickPlayClient::LoadHostPreference(),
+                 [this, attempt = m_attempt](QuickPlayClient::Result result) {
                    if (attempt == m_attempt &&
                        (m_state == State::Searching || m_state == State::PublishingHostCode ||
                         m_state == State::WaitingForHost || m_state == State::ValidatingMatch))
@@ -173,6 +174,7 @@ void QuickPlayController::ClaimMatch(const QuickPlayClient::Result& result)
   // host-owned values; checkpoint restoration can invalidate guest endpoints.
   const auto attempt = m_attempt;
   m_match_id = result.match_id;
+  m_match_region = result.region;
   m_is_host = result.state == QuickPlayClient::State::MatchedHost;
   m_poll_timer.stop();
   m_setup_timer.start();

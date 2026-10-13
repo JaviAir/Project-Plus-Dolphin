@@ -67,8 +67,20 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
 {
   m_animation_timer.stop();
 
-  m_region->setText(
-      tr("Region: %1").arg(QuickPlayClient::GetRegionLabel(m_controller.GetRegion())));
+  const auto& regions = m_controller.GetRegions();
+  if (!m_controller.GetMatchRegion().isEmpty() || regions.size() == 1)
+  {
+    const auto& region =
+        m_controller.GetMatchRegion().isEmpty() ? regions.front() : m_controller.GetMatchRegion();
+    m_region->setText(tr("Region: %1").arg(QuickPlayClient::GetRegionLabel(region)));
+  }
+  else
+  {
+    QStringList labels;
+    for (const auto& region : regions)
+      labels.append(QuickPlayClient::GetRegionLabel(region));
+    m_region->setText(tr("Regions: %1").arg(labels.join(QStringLiteral(", "))));
+  }
   m_region->setVisible(state != QuickPlayController::State::Idle);
 
   switch (state)

@@ -3,12 +3,15 @@
 
 #include "DolphinQt/QuickPlay/QuickPlaySettingsDialog.h"
 
+#include <algorithm>
 #include <chrono>
 
 #include <QCheckBox>
 #include <QComboBox>
 #include <QDialogButtonBox>
 #include <QFormLayout>
+#include <QGridLayout>
+#include <QHBoxLayout>
 #include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
@@ -31,13 +34,31 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   auto* form = new QFormLayout;
   m_coordinator = new QLineEdit;
   m_coordinator->setObjectName(QStringLiteral("quickplay_coordinator"));
-  form->addRow(tr("Coordinator Server:"), m_coordinator);
-  m_region = new QComboBox;
-  m_region->setObjectName(QStringLiteral("quickplay_region"));
+  // Hidden by default: a private coordinator URL is effectively an access secret.
+  m_coordinator->setEchoMode(QLineEdit::Password);
+  m_show_coordinator = new QPushButton(tr("Show"));
+  m_show_coordinator->setCheckable(true);
+  auto* coordinator_row = new QHBoxLayout;
+  coordinator_row->addWidget(m_coordinator);
+  coordinator_row->addWidget(m_show_coordinator);
+  form->addRow(tr("Coordinator Server:"), coordinator_row);
+  auto* region_list = new QWidget;
+  region_list->setObjectName(QStringLiteral("quickplay_regions"));
+  m_region_grid = new QGridLayout(region_list);
+  m_region_grid->setContentsMargins(0, 0, 0, 0);
   for (const auto& region : QuickPlayClient::GetRegions())
-    m_region->addItem(region.label, region.value);
-  m_canonical_region_count = m_region->count();
-  form->addRow(tr("Region:"), m_region);
+    AddRegion(region.value, region.label);
+  m_canonical_region_count = m_regions.size();
+  form->addRow(tr("Regions:"), region_list);
+  m_host_preference = new QComboBox;
+  m_host_preference->setObjectName(QStringLiteral("quickplay_host_preference"));
+  m_host_preference->addItem(tr("Prefer to host"), QStringLiteral("host"));
+  m_host_preference->addItem(tr("No preference"), QStringLiteral("none"));
+  m_host_preference->addItem(tr("Prefer to join"), QStringLiteral("join"));
+  m_host_preference->setToolTip(
+      tr("Used when it complements your opponent's preference. Otherwise the player who "
+         "searched first hosts. It never delays a match."));
+  form->addRow(tr("Host Preference:"), m_host_preference);
   layout->addLayout(form);
   m_seamless = new QCheckBox(tr("Prepare in-game Quick Play when the Offline Launcher starts"));
   m_seamless->setObjectName(QStringLiteral("quickplay_seamless"));
@@ -58,6 +79,10 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   connect(buttons, &QDialogButtonBox::accepted, this, &QuickPlaySettingsDialog::Save);
   connect(buttons, &QDialogButtonBox::rejected, this, &QuickPlaySettingsDialog::reject);
   connect(m_test, &QPushButton::clicked, this, &QuickPlaySettingsDialog::TestConnection);
+  connect(m_show_coordinator, &QPushButton::toggled, this, [this](bool shown) {
+    m_coordinator->setEchoMode(shown ? QLineEdit::Normal : QLineEdit::Password);
+    m_show_coordinator->setText(shown ? tr("Hide") : tr("Show"));
+  });
   connect(m_coordinator, &QLineEdit::textChanged, this, [this] {
     InvalidateTest();
     m_result->clear();
@@ -72,6 +97,14 @@ QuickPlaySettingsDialog::~QuickPlaySettingsDialog()
   m_worker.Shutdown();
 }
 
+void QuickPlaySettingsDialog::AddRegion(const QString& value, const QString& label)
+{
+  auto* box = new QCheckBox(label);
+  const int index = static_cast<int>(m_regions.size());
+  m_region_grid->addWidget(box, index / 2, index % 2);
+  m_regions.emplace_back(box, value);
+}
+
 void QuickPlaySettingsDialog::InvalidateTest()
 {
   if (m_test_cancelled)
@@ -84,17 +117,25 @@ void QuickPlaySettingsDialog::Open()
   {
     m_coordinator->setText(
         QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)));
-    // Remove the previous custom entry when reopening after a config change.
-    while (m_region->count() > m_canonical_region_count)
-      m_region->removeItem(m_canonical_region_count);
-    const auto region = QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION));
-    int index = m_region->findData(QuickPlayClient::NormalizeRegion(region));
-    if (index < 0)
+    m_show_coordinator->setChecked(false);
+    // Remove previous custom entries when reopening after a config change.
+    while (m_regions.size() > m_canonical_region_count)
     {
-      m_region->addItem(tr("Custom (preserved): %1").arg(region), region);
-      index = m_region->count() - 1;
+      delete m_regions.back().first;
+      m_regions.pop_back();
     }
-    m_region->setCurrentIndex(index);
+    const auto saved = QuickPlayClient::LoadRegions();
+    for (const auto& region : saved)
+    {
+      const auto it = std::find_if(m_regions.begin(), m_regions.end(),
+                                   [&](const auto& entry) { return entry.second == region; });
+      if (it == m_regions.end())
+        AddRegion(region, tr("Custom (preserved): %1").arg(region));
+    }
+    for (const auto& [box, value] : m_regions)
+      box->setChecked(saved.contains(value));
+    m_host_preference->setCurrentIndex(
+        m_host_preference->findData(QuickPlayClient::LoadHostPreference()));
     m_seamless->setChecked(Config::Get(Config::NETPLAY_QUICKPLAY_SEAMLESS));
     m_result->clear();
   }
@@ -119,20 +160,35 @@ void QuickPlaySettingsDialog::Save()
     m_coordinator->setFocus();
     return;
   }
-  const auto region = m_region->currentData().toString();
-  if (!QuickPlayClient::IsValidRegion(region))
+  QStringList regions;
+  for (const auto& [box, value] : m_regions)
   {
-    m_result->setText(tr("The existing custom region is invalid. Choose a listed region. "
-                         "Custom regions must be 1–32 ASCII characters without whitespace."));
+    if (box->isChecked())
+      regions.append(value);
+  }
+  if (regions.isEmpty())
+  {
+    m_result->setText(tr("Choose at least one region."));
     return;
   }
+  if (regions.size() > QuickPlayClient::MAX_REGIONS)
+  {
+    m_result->setText(tr("Choose at most %1 regions.").arg(QuickPlayClient::MAX_REGIONS));
+    return;
+  }
+  const auto joined = regions.join(QLatin1Char(',')).toStdString();
+  const auto host_preference = m_host_preference->currentData().toString().toStdString();
 
   // Match Dolphin's effective-layer convention, and persist even if a command-line override
   // supplied the initial value. Saving explicitly replaces that override for this run too.
   Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
   Config::SetBase(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
-  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_REGION, region.toStdString());
-  Config::SetBase(Config::NETPLAY_QUICKPLAY_REGION, region.toStdString());
+  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_REGIONS, joined);
+  Config::SetBase(Config::NETPLAY_QUICKPLAY_REGIONS, joined);
+  // Migrated into QuickPlayRegions above.
+  Config::DeleteKey(Config::LayerType::Base, Config::NETPLAY_QUICKPLAY_REGION);
+  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_HOST_PREFERENCE, host_preference);
+  Config::SetBase(Config::NETPLAY_QUICKPLAY_HOST_PREFERENCE, host_preference);
   Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_SEAMLESS, m_seamless->isChecked());
   Config::SetBase(Config::NETPLAY_QUICKPLAY_SEAMLESS, m_seamless->isChecked());
   Config::Save();

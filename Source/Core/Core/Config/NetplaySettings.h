@@ -15,7 +15,12 @@ namespace Config
 // Main.NetPlay
 
 extern const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR;
+// Comma-separated region tokens. Empty means not saved yet: read the legacy single
+// QuickPlayRegion instead (see QuickPlayClient::LoadRegions).
+extern const Info<std::string> NETPLAY_QUICKPLAY_REGIONS;
 extern const Info<std::string> NETPLAY_QUICKPLAY_REGION;
+// "host", "none" or "join".
+extern const Info<std::string> NETPLAY_QUICKPLAY_HOST_PREFERENCE;
 // Prepare in-game Quick Play when the Offline Launcher boots (Core/QuickPlayRecipe.h).
 extern const Info<bool> NETPLAY_QUICKPLAY_SEAMLESS;
 
