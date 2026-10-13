@@ -32,6 +32,7 @@
 #include "Core/FifoPlayer/FifoPlayer.h"
 #include "Core/FifoPlayer/FifoRecorder.h"
 #include "Core/HW/Memmap.h"
+#include "Core/QuickPlayRecipe.h"
 #include "Core/System.h"
 
 #include "VideoCommon/AbstractFramebuffer.h"
@@ -2405,6 +2406,7 @@ void TextureCacheBase::CopyRenderTargetToTexture(
         // Immediately flush it.
         WriteEFBCopyToRAM(dst, bytes_per_row / sizeof(u32), num_blocks_y, dstStride,
                           std::move(staging_texture));
+        QuickPlayRecipe::NoteGPUWrite(dstAddr, bytes_per_row, num_blocks_y, dstStride);
       }
       else
       {
@@ -2550,6 +2552,8 @@ void TextureCacheBase::FlushEFBCopy(TCacheEntry* entry)
   u8* const dst = memory.GetPointerForRange(entry->addr, covered_range);
   WriteEFBCopyToRAM(dst, entry->pending_efb_copy_width, entry->pending_efb_copy_height,
                     entry->memory_stride, std::move(entry->pending_efb_copy));
+  QuickPlayRecipe::NoteGPUWrite(entry->addr, entry->pending_efb_copy_width * sizeof(u32),
+                                entry->pending_efb_copy_height, entry->memory_stride);
 
   // If the EFB copy was invalidated (e.g. the bloom case mentioned in InvalidateTexture), we don't
   // need to do anything more. The entry will be automatically deleted by smart pointers

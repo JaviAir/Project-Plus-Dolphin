@@ -9,9 +9,12 @@ in-game flow on Windows, but it has **not been built or run on Windows yet**.
   (X11 or XWayland) and `windows`. It requires single-core mode and a
   separate render window (Render to Main Window off; Dual Core is forced off while
   Quick Play is prepared). Any graphics backend is allowed:
-  the paused redraw only uses Dolphin's backend-independent drawing. Only OpenGL has
-  been tested; Direct3D 11 on Windows is the first test of another backend. The
-  backend is not part of the compared settings, so peers may use different backends.
+  the paused redraw only uses Dolphin's backend-independent drawing. The backend is not
+  part of the compared settings, so peers may use different backends. Backends write
+  slightly different pixels into game memory with EFB/XFB copies, so the origin digest
+  leaves the memory those copies wrote out (it digests their address ranges instead).
+  OpenGL, Vulkan and the software renderer give the same digest on Linux; Direct3D on
+  Windows is the first test of another backend.
 - `DolphinQt.vcxproj` now builds `QuickPlay\PersistentSession.cpp` (before this the
   branch could not link on Windows) and defines `QUICKPLAY_NO_BULK_SCAN_TRIAL`, so
   Windows builds use the no-scan policy. The CMake option now defaults to `ON` too.
@@ -161,7 +164,7 @@ $env:QUICKPLAY_DISABLE_UPDATE_CHECK = "1"
    right for a few seconds (the boot runs fast and muted), then the character
    select screen shows the `L + R + D-pad Up — Search` hint. Note how long the
    preparation took, and send the log line
-   `Quick Play recipe portable-css-ab/2: origin digest …` from both machines.
+   `Quick Play recipe portable-css-ab/3: origin digest …` from both machines.
    **The two origin digests must be equal.** If preparation fails, the overlay
    says why and local play continues; send the `Quick Play recipe:` lines.
 2. Search: does `Searching in <region>…` appear immediately? Then press B to cancel.

@@ -9,8 +9,9 @@ ordinary desktop/conventional NetPlay retains its boot/stop lifecycle.
 
 There is no `QuickPlay/common-css.sav` or `common-css.json` to install or copy.
 Each Dolphin generates the shared CSS origin itself, under a fixed recipe, during
-its own boot (`Core/QuickPlayRecipe.{h,cpp}`, recipe `portable-css-ab/2` from the
-portable-sync research). On join, each peer loads its *own* generated origin.
+its own boot (`Core/QuickPlayRecipe.{h,cpp}`, recipe `portable-css-ab/3`: `/2` from the
+portable-sync research, with a backend-independent digest). On join, each peer loads
+its *own* generated origin.
 
 **When.** DolphinQt boots a DOL whose game ID is `ID-Project+ Offline Launcher`
 (official content) or `ID-Offline Launcher`, outside NetPlay and movies, with
@@ -76,7 +77,11 @@ preparation fails: the overlay says why, local play continues and Quick Play
 admission reports the reason.
 
 **Identity.** The origin digest is XXH3 over the MEM1, MEM2 and CPU register
-digests, PC and ticks at capture. Admission computes the contract identity
+digests, PC, ticks and the digest of the EFB/XFB copy ranges at capture. Memory
+written by EFB/XFB copies during preparation is left out of the MEM1/MEM2 digests:
+graphics backends round those pixels differently (OpenGL and Vulkan differed in
+one 640×480 RGBA8 copy), and the game only displays them, as in ordinary NetPlay
+between peers on different backends. Admission computes the contract identity
 `SHA256(policy, build revision, recipe id, RunningNetPlayConfigIdentity())` and
 sends identity and origin digest in `PersistentReady`. The host compares both;
 on a difference it sends `PersistentMismatch` (both digests) before `StopGame`,

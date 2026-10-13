@@ -3,12 +3,14 @@
 
 #include "Core/QuickPlayRecipe.h"
 
+#include <algorithm>
 #include <array>
 #include <atomic>
 #include <chrono>
 #include <mutex>
 #include <sstream>
 #include <utility>
+#include <vector>
 
 #include <fmt/format.h>
 #include <xxhash.h>
@@ -64,15 +66,18 @@ constexpr int OCCURRENCE = 3;
 constexpr u64 PREPARE_LIMIT_SECONDS = 20;
 constexpr char WIRELESS_MAC[] = "00:17:ab:0a:5a:79";
 constexpr char FALLBACK_SERIAL[] = "123456789";
+constexpr u32 MEM2_PHYSICAL = 0x10000000;
 
 struct RecipeState
 {
   std::atomic<bool> frontend{false};
   std::atomic<bool> active{false};
   std::atomic<Phase> phase{Phase::Off};
-  std::mutex lock;  // origin, failure
+  std::mutex lock;  // origin, failure, gpu_writes
   Origin origin;
   std::string failure;
+  // Physical [begin, end) ranges written by EFB/XFB copies while preparing.
+  std::vector<std::pair<u32, u32>> gpu_writes;
   std::chrono::steady_clock::time_point boot_time;
 
   // CPU thread only.
@@ -492,6 +497,7 @@ bool ActivateForBoot(const std::string& game_id)
     std::lock_guard guard(s.lock);
     s.origin = {};
     s.failure.clear();
+    s.gpu_writes.clear();
   }
   s.boot_time = std::chrono::steady_clock::now();
   s.phase = Phase::Preparing;
@@ -536,9 +542,45 @@ Origin GetOrigin()
 
 std::string ComputeDigest(Core::System& system, std::string* detail)
 {
+  std::vector<std::pair<u32, u32>> gpu;
+  {
+    std::lock_guard guard(s.lock);
+    gpu = s.gpu_writes;
+  }
+  std::ranges::sort(gpu);
+  std::vector<std::pair<u32, u32>> merged;
+  for (const auto& range : gpu)
+  {
+    if (!merged.empty() && range.first <= merged.back().second)
+      merged.back().second = std::max(merged.back().second, range.second);
+    else
+      merged.push_back(range);
+  }
+  u64 gpu_bytes = 0;
+  for (const auto& range : merged)
+    gpu_bytes += range.second - range.first;
+  const u64 gpu_ranges = merged.empty() ? 0 : XXH3_64bits(merged.data(), merged.size() * sizeof(merged[0]));
+  // Hash a memory region without the copied ranges that fall inside it.
+  const auto hash = [&merged](const u8* data, u32 base, u32 size) {
+    XXH3_state_t* region = XXH3_createState();
+    XXH3_64bits_reset(region);
+    u32 at = base;
+    for (const auto& [begin, end] : merged)
+    {
+      const u32 b = std::clamp(begin, base, base + size), e = std::clamp(end, base, base + size);
+      if (b >= e)
+        continue;
+      XXH3_64bits_update(region, data + (at - base), b - at);
+      at = e;
+    }
+    XXH3_64bits_update(region, data + (at - base), base + size - at);
+    const u64 digest = XXH3_64bits_digest(region);
+    XXH3_freeState(region);
+    return digest;
+  };
   auto& mem = system.GetMemory();
-  const u64 mem1 = XXH3_64bits(mem.GetRAM(), mem.GetRamSizeReal());
-  const u64 mem2 = mem.GetEXRAM() ? XXH3_64bits(mem.GetEXRAM(), mem.GetExRamSizeReal()) : 0;
+  const u64 mem1 = hash(mem.GetRAM(), 0, mem.GetRamSizeReal());
+  const u64 mem2 = mem.GetEXRAM() ? hash(mem.GetEXRAM(), MEM2_PHYSICAL, mem.GetExRamSizeReal()) : 0;
   const auto& ppc = system.GetPPCState();
   XXH3_state_t* state = XXH3_createState();
   XXH3_64bits_reset(state);
@@ -553,11 +595,14 @@ std::string ComputeDigest(Core::System& system, std::string* detail)
   XXH3_64bits_update(state, &ppc.pc, sizeof(ppc.pc));
   const u64 regs = XXH3_64bits_digest(state);
   XXH3_freeState(state);
-  const std::array<u64, 5> parts{mem1, mem2, regs, ppc.pc, system.GetCoreTiming().GetTicks()};
+  const std::array<u64, 6> parts{mem1, mem2, regs, ppc.pc, system.GetCoreTiming().GetTicks(),
+                                 gpu_ranges};
   if (detail)
   {
-    *detail = fmt::format("mem1 {:016x} mem2 {:016x} regs {:016x} pc {:08x} ticks {}", mem1,
-                          mem2, regs, ppc.pc, parts[4]);
+    *detail = fmt::format("mem1 {:016x} mem2 {:016x} regs {:016x} pc {:08x} ticks {} gpu copies "
+                          "{:016x} ({} ranges, {} bytes not digested)",
+                          mem1, mem2, regs, ppc.pc, parts[4], gpu_ranges, merged.size(),
+                          gpu_bytes);
   }
   return fmt::format("{:016x}", XXH3_64bits(parts.data(), sizeof(parts)));
 }
@@ -618,6 +663,21 @@ void NoteSIRead(int channel, bool high, u32 value)
   if (s.phase == Phase::Preparing && channel < 2 &&
       value != (high ? 0x00808080u : 0x80800000u))
     s.nonneutral_seen = true;
+}
+
+void NoteGPUWrite(u32 address, u32 bytes_per_row, u32 rows, u32 stride)
+{
+  if (s.phase != Phase::Preparing || !rows || !bytes_per_row)
+    return;
+  address &= 0x1fffffff;
+  std::lock_guard guard(s.lock);
+  if (stride == bytes_per_row)
+  {
+    s.gpu_writes.emplace_back(address, address + rows * stride);
+    return;
+  }
+  for (u32 row = 0; row < rows; ++row)
+    s.gpu_writes.emplace_back(address + row * stride, address + row * stride + bytes_per_row);
 }
 
 void NoteGuestIO()

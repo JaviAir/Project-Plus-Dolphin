@@ -17,10 +17,11 @@ class System;
 // boots under the same clock, private temporary NAND, forced settings and neutral input,
 // stops at the first verified CSS origin, saves it to a private file and hands control to
 // the player on the same Core. Peers then restore their own origin on join instead of a
-// shared checkpoint. Portable-sync research recipe portable-css-ab/2 (STEP4-REPORT.md).
+// shared checkpoint. Portable-sync research recipe portable-css-ab/2 (STEP4-REPORT.md); /3
+// leaves EFB/XFB copy pixels out of the digest.
 namespace QuickPlayRecipe
 {
-inline constexpr char RECIPE_ID[] = "portable-css-ab/2";
+inline constexpr char RECIPE_ID[] = "portable-css-ab/3";
 // Recipe clock origin, 2026-01-01T00:00:00Z. It must stay at least 71 s after 2000-01-01:
 // guest system time is the time base plus the -2^32 bias that Wii HLE presets, and a
 // negative system time stalls SI controller detection.
@@ -61,6 +62,8 @@ std::string FailureReason();
 Origin GetOrigin();
 
 // CPU thread, Core paused. MEM1, MEM2 and CPU register digest; `detail` names the parts.
+// Memory written by EFB/XFB copies during preparation is left out (only the copied ranges are
+// digested): the pixels differ between graphics backends, and the game only displays them.
 std::string ComputeDigest(Core::System& system, std::string* detail = nullptr);
 
 // CPU thread. Gives guest ports 2-4 their configured devices back once the origin is saved, so
@@ -79,5 +82,8 @@ bool SuppressCopyBack();
 bool NeutralPad(int port, GCPadStatus* pad);
 void NoteSIRead(int channel, bool high, u32 value);
 void NoteGuestIO();
+// Video thread (the CPU thread while preparing: the recipe forces single core). An EFB/XFB copy
+// wrote `rows` rows of `bytes_per_row` bytes, `stride` apart, at physical `address`.
+void NoteGPUWrite(u32 address, u32 bytes_per_row, u32 rows, u32 stride);
 void OnFieldBoundary(Core::System& system);
 }  // namespace QuickPlayRecipe
