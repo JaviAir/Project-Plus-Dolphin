@@ -2715,7 +2715,7 @@ std::string NetPlayClient::GetCurrentGolfer()
 // called from ---GUI--- thread
 bool NetPlayClient::LocalPlayerHasControllerMapped() const
 {
-  return PlayerHasControllerMapped(m_local_player->pid);
+  return m_local_player && PlayerHasControllerMapped(m_local_player->pid);
 }
 
 bool NetPlayClient::IsFirstInGamePad(int ingame_pad) const
