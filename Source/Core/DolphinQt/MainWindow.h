@@ -188,7 +188,7 @@ private:
   void ShowGraphicsWindow();
   void ShowFreeLookWindow();
   void ShowAboutDialog();
-#ifdef SHOW_UPDATER
+  #ifdef SHOW_UPDATER
   void ShowUpdateDialog();
   void CheckForUpdatesAuto();
 #endif  // SHOW_UPDATER

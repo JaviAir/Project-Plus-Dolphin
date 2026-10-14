@@ -4,7 +4,6 @@
 #include "DolphinQt/MainWindow.h"
 
 #include <QApplication>
-#include <QByteArray>
 #include <QCloseEvent>
 #include <QDateTime>
 #include <QDesktopServices>
@@ -13,14 +12,15 @@
 #include <QDropEvent>
 #include <QFileInfo>
 #include <QIcon>
-#include <QJsonDocument>
-#include <QMessageBox>
 #include <QMimeData>
 #include <QStackedWidget>
 #include <QStyleHints>
 #include <QTimer>
 #include <QVBoxLayout>
 #include <QWindow>
+#include <QMessageBox>
+#include <QByteArray>
+#include <QJsonDocument>
 
 #include <fmt/format.h>
 
@@ -41,12 +41,13 @@
 
 #include "Common/Config/Config.h"
 #include "Common/FileUtil.h"
-#include "Common/HttpRequest.h"
 #include "Common/ScopeGuard.h"
-#include "Common/StringUtil.h"
 #include "Common/Version.h"
 #include "Common/WindowSystemInfo.h"
+#include "Common/HttpRequest.h"
 #include "Common/scmrev.h"
+#include "Common/ScopeGuard.h"
+#include "Common/StringUtil.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/Boot/Boot.h"
@@ -57,6 +58,7 @@
 #include "Core/Config/NetplaySettings.h"
 #include "Core/Config/UISettings.h"
 #include "Core/Config/WiimoteSettings.h"
+#include "Core/ConfigLoaders/NetPlayConfigLoader.h"
 #include "Core/Core.h"
 #include "Core/FreeLookManager.h"
 #include "Core/HW/DVD/DVDInterface.h"
@@ -64,6 +66,7 @@
 #include "Core/HW/GCKeyboard.h"
 #include "Core/HW/GCPad.h"
 #include "Core/HW/ProcessorInterface.h"
+#include "Core/HW/SI/SI.h"
 #include "Core/HW/SI/SI_Device.h"
 #include "Core/HW/Wiimote.h"
 #include "Core/HotkeyManager.h"
@@ -87,8 +90,6 @@
 #include "DiscIO/NANDImporter.h"
 #include "DiscIO/RiivolutionPatcher.h"
 
-#include "Core/ConfigLoaders/NetPlayConfigLoader.h"
-#include "Core/HW/SI/SI.h"
 #include "DolphinQt/AboutDialog.h"
 #include "DolphinQt/Achievements/AchievementsWindow.h"
 #include "DolphinQt/CheatsManager.h"
@@ -833,7 +834,7 @@ void MainWindow::ConnectToolBar()
   connect(m_tool_bar, &ToolBar::SettingsPressed, this, &MainWindow::ShowSettingsWindow);
   connect(m_tool_bar, &ToolBar::ControllersPressed, this, &MainWindow::ShowControllersWindow);
   connect(m_tool_bar, &ToolBar::GraphicsPressed, this, &MainWindow::ShowGraphicsWindow);
-#ifdef SHOW_UPDATER
+  #ifdef SHOW_UPDATER
   connect(m_tool_bar, &ToolBar::InstallUpdateManuallyPressed, this, &MainWindow::ShowUpdateDialog);
 #endif  // SHOW_UPDATER
 
@@ -1654,82 +1655,77 @@ void MainWindow::ShowAboutDialog()
   about.exec();
 }
 
-// P+ change: New updater; credit to RainbowTabitha and the Mario Party Netplay team for the base
-// code!
+// P+ change: New updater; credit to RainbowTabitha and the Mario Party Netplay team for the base code!
 
 #ifdef SHOW_UPDATER
 void MainWindow::ShowUpdateDialog()
 {
-  Common::HttpRequest httpRequest;
+    Common::HttpRequest httpRequest;
 
-  // Make the GET request
-  auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/"
-                                  "Project-Plus-Dolphin/releases/latest");
+    // Make the GET request
+    auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/Project-Plus-Dolphin/releases/latest");
 
-  if (response)
-  {
-    // Access the underlying vector and convert it to QByteArray
-    QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-    // Parse the JSON response
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-    QJsonObject jsonObject = jsonDoc.object();
-
-    QString currentVersion = QString::fromStdString(SCM_DESC_STR);
-    QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-    if (currentVersion != latestVersion)
+    if (response)
     {
-      // Create and show the UpdateDialog with the fetched data
-      bool forced = false;  // Set this based on your logic
-      UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-      updater.exec();
+        // Access the underlying vector and convert it to QByteArray
+        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+        // Parse the JSON response
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+        QJsonObject jsonObject = jsonDoc.object();
+      
+        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+        if (currentVersion != latestVersion)
+        {
+          // Create and show the UpdateDialog with the fetched data
+          bool forced = false; // Set this based on your logic
+          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+          updater.exec();
+        } else {
+          QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
+        }
     }
     else
     {
-      QMessageBox::information(this, tr("Info"), tr("You are already up to date."));
+        // Handle error
+        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
     }
-  }
-  else
-  {
-    // Handle error
-    QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
-  }
 }
 
 void MainWindow::CheckForUpdatesAuto()
 {
-  Common::HttpRequest httpRequest;
+    Common::HttpRequest httpRequest;
 
-  // Make the GET request
-  auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/"
-                                  "Project-Plus-Dolphin/releases/latest");
+    // Make the GET request
+    auto response = httpRequest.Get("https://api.github.com/repos/Project-Plus-Development-Team/Project-Plus-Dolphin/releases/latest");
 
-  if (response)
-  {
-    // Access the underlying vector and convert it to QByteArray
-    QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
-
-    // Parse the JSON response
-    QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
-    QJsonObject jsonObject = jsonDoc.object();
-
-    QString currentVersion = QString::fromStdString(SCM_DESC_STR);
-    QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
-
-    if (currentVersion != latestVersion)
+    if (response)
     {
-      // Create and show the UpdateDialog with the fetched data
-      bool forced = false;  // Set this based on your logic
-      UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
-      updater.exec();
+        // Access the underlying vector and convert it to QByteArray
+        QByteArray responseData(reinterpret_cast<const char*>(response->data()), response->size());
+
+        // Parse the JSON response
+        QJsonDocument jsonDoc = QJsonDocument::fromJson(responseData);
+        QJsonObject jsonObject = jsonDoc.object();
+      
+        QString currentVersion = QString::fromStdString(SCM_DESC_STR);
+        QString latestVersion = jsonObject.value(QStringLiteral("tag_name")).toString();
+
+        if (currentVersion != latestVersion)
+        {
+          // Create and show the UpdateDialog with the fetched data
+          bool forced = false; // Set this based on your logic
+          UserInterface::Dialog::UpdateDialog updater(this, jsonObject, forced);
+          updater.exec();
+        }
     }
-  }
-  else
-  {
-    // Handle error
-    QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
-  }
+    else
+    {
+        // Handle error
+        QMessageBox::critical(this, tr("Error"), tr("Failed to fetch update information."));
+    }
 }
 #endif  // SHOW_UPDATER
 

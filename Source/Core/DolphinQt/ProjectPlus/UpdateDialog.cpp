@@ -28,10 +28,10 @@
 
 using namespace UserInterface::Dialog;
 
-UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject update_info, bool forced)
+UpdateDialog::UpdateDialog(QWidget *parent, QJsonObject jsonObject, bool forced) 
     : QDialog(parent)
 {
-    this->jsonObject = update_info;
+    this->jsonObject = jsonObject;
 
     // Create UI components
     QVBoxLayout* mainLayout = new QVBoxLayout(this);

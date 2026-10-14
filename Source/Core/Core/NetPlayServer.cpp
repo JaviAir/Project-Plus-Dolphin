@@ -573,8 +573,8 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
     SendResponseToPlayer(new_player, MessageID::GameStatus, existing_player.pid,
                          static_cast<u8>(existing_player.game_status));
-
-    SendResponseToPlayer(new_player, MessageID::PadBufferPlayer, existing_player.pid,
+						 
+	SendResponseToPlayer(new_player, MessageID::PadBufferPlayer, existing_player.pid,
                          static_cast<u32>(existing_player.buffer));
   }
 
@@ -887,21 +887,21 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     SendToClients(spac, player.pid);
   }
   break;
-
+  
   case MessageID::PadBufferPlayer:
   {
-    u32 buffer;
-    packet >> buffer;
+	u32 buffer;
+	packet >> buffer;
 
-    player.buffer = buffer;
+	player.buffer = buffer;
 
-    sf::Packet spac;
-    spac << MessageID::PadBufferPlayer;
-    spac << player.pid;
-    spac << buffer;
+	sf::Packet spac;
+	spac << MessageID::PadBufferPlayer;
+	spac << player.pid;
+	spac << buffer;
 
-    SendToClients(spac, player.pid);
-  }
+	SendToClients(spac, player.pid);
+	}
   break;
 
   case MessageID::ChunkedDataProgress:
@@ -934,7 +934,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     packet >> spectator;
 
     auto padmap = GetPadMapping();
-
+  
     int player_port = -1;
     for (int i = 0; i < (int)padmap.size(); i++)
     {
@@ -965,6 +965,7 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
     this->SetPadMapping(padmap);
   }
   break;
+
 
   case MessageID::PadData:
   {

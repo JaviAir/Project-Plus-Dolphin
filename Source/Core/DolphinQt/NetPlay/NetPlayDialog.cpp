@@ -244,7 +244,7 @@ void NetPlayDialog::CreateMainLayout()
     Settings::Instance().GetNetPlayServer()->ComputeGameDigest(
         NetPlay::NetPlayClient::GetBrawlFileIdentifier());
   });
-
+  
   m_other_menu = m_menu_bar->addMenu(tr("Other"));
   m_record_input_action = m_other_menu->addAction(tr("Record Inputs"));
   m_record_input_action->setCheckable(true);
@@ -321,7 +321,7 @@ void NetPlayDialog::CreatePlayersLayout()
   m_players_list = new QTableWidget;
   m_kick_button = new QPushButton(tr("Kick Player"));
   m_assign_ports_button = new QPushButton(tr("Assign Controller Ports"));
-
+  
   copyCode = false;
 
   m_players_list->setTabKeyNavigation(false);
@@ -396,7 +396,7 @@ void NetPlayDialog::ConnectWidgets()
     if (value == m_player_buffer_size)
       return;
     auto client = Settings::Instance().GetNetPlayClient();
-    client->AdjustPlayerPadBufferSize(value);
+      client->AdjustPlayerPadBufferSize(value);
   });
   const auto hia_function = [this](bool enable) {
     if (m_host_input_authority != enable)
@@ -418,7 +418,7 @@ void NetPlayDialog::ConnectWidgets()
   });
   connect(m_quit_button, &QPushButton::clicked, this, &NetPlayDialog::reject);
 
-  connect(m_spectator_mode, &QCheckBox::toggled, this, &NetPlayDialog::IsSpectatorEnabled);
+  connect(m_spectator_mode, &QCheckBox::toggled, this, &NetPlayDialog::IsSpectatorEnabled); 
 
   connect(m_game_button, &QPushButton::clicked, [this] {
     if (m_trial_launcher.load())
@@ -972,12 +972,12 @@ void NetPlayDialog::UpdateGUI()
         m_hostcode_label->setText(
             InetAddressToString(Common::g_TraversalClient->GetExternalAddress()));
       }
-
-      if (copyCode == false)
-      {
-        QApplication::clipboard()->setText(m_hostcode_label->text());
-        copyCode = true;
-      }
+	  
+	  if (copyCode == false)
+	  {
+		QApplication::clipboard()->setText(m_hostcode_label->text());
+		copyCode = true;
+	  }
       m_hostcode_action_button->setEnabled(true);
       m_hostcode_action_button->setText(tr("Copy"));
       m_is_copy_button_retry = false;
@@ -1482,6 +1482,7 @@ NetPlayDialog::FindGameFile(const NetPlay::SyncIdentifier& sync_identifier,
   NetPlay::SyncIdentifierComparison temp;
   if (!found)
     found = &temp;
+
   *found = NetPlay::SyncIdentifierComparison::DifferentGame;
   const auto games = m_game_list_snapshot.load();
   if (const auto trial = m_trial_launcher.load())

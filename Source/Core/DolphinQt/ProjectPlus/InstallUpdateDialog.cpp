@@ -29,12 +29,12 @@
 #endif
 
 // Constructor implementation
-InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installation_directory, QString temporary_directory, QString archive_filename, QString download_url)
+InstallUpdateDialog::InstallUpdateDialog(QWidget *parent, QString installationDirectory, QString temporaryDirectory, QString filename, QString downloadUrl)
     : QDialog(parent), // Only pass the parent
-      installationDirectory(installation_directory),
-      temporaryDirectory(temporary_directory),
-      filename(archive_filename),
-      downloadUrl(download_url) // Initialize member variables
+      installationDirectory(installationDirectory),
+      temporaryDirectory(temporaryDirectory),
+      filename(filename),
+      downloadUrl(downloadUrl) // Initialize member variables
 {
     setWindowTitle(QStringLiteral("Project+ Dolphin - Updater"));
     

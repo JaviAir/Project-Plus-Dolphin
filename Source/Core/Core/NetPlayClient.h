@@ -207,7 +207,7 @@ public:
 
   static void SendTimeBase();
   bool DoAllPlayersHaveGame();
-
+  
   void AdjustPlayerPadBufferSize(u32 buffer);
 
   // the number of ticks in-between frames

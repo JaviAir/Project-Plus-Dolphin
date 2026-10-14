@@ -351,7 +351,8 @@ void NetPlayClient::AdjustPlayerPadBufferSize(u32 buffer)
   if (m_local_player->buffer < m_minimum_buffer_size)
     m_local_player->buffer = m_minimum_buffer_size;
 
-  // not needed on clients with host input authority
+
+	 // not needed on clients with host input authority
   if (!m_host_input_authority)
   {
     // tell clients to change buffer size
@@ -361,7 +362,7 @@ void NetPlayClient::AdjustPlayerPadBufferSize(u32 buffer)
 
     SendAsync(std::move(spac));
   }
-
+  
   m_dialog->OnPlayerPadBufferChanged(m_local_player->buffer);
 }
 
@@ -452,7 +453,7 @@ void NetPlayClient::OnData(sf::Packet& packet)
   case MessageID::PadBufferMinimum:
     OnPadBufferMinimum(packet);
     break;
-
+    
   case MessageID::PadBufferPlayer:
     OnPadBufferPlayer(packet);
     break;
@@ -867,23 +868,24 @@ void NetPlayClient::OnPadBufferMinimum(sf::Packet& packet)
   std::lock_guard lock(m_crit.players);
   u32 size = 0;
   packet >> size;
-
+  
   m_minimum_buffer_size = size;
-  m_dialog->OnMinimumPadBufferChanged(size);
+    m_dialog->OnMinimumPadBufferChanged(size);
 
-  if (m_local_player->buffer < m_minimum_buffer_size)
-    AdjustPlayerPadBufferSize(size);
+    if (m_local_player->buffer < m_minimum_buffer_size)
+      AdjustPlayerPadBufferSize(m_minimum_buffer_size);
 }
+
 
 void NetPlayClient::OnPadBufferPlayer(sf::Packet& packet)
 {
-  PlayerId pid;
-  packet >> pid;
+    PlayerId pid;
+    packet >> pid;
 
-  {
-    std::lock_guard<std::recursive_mutex> lkp(m_crit.players);
-    packet >> m_players[pid].buffer;
-  }
+    {
+      std::lock_guard<std::recursive_mutex> lkp(m_crit.players);
+      packet >> m_players[pid].buffer;
+    }
 }
 
 void NetPlayClient::OnHostInputAuthority(sf::Packet& packet)
@@ -2896,8 +2898,7 @@ void NetPlayClient::ComputeGameDigest(const SyncIdentifier& sync_identifier)
   else if (auto game = m_dialog->FindGameFile(sync_identifier))
     file = game->GetFilePath();
   else if (sync_identifier == GetBrawlFileIdentifier())
-    file = File::GetSysDirectory() + "Wii" + DIR_SEP + "title" + DIR_SEP + "00010000" + DIR_SEP +
-           "52534245" + DIR_SEP + "data" + DIR_SEP + BRAWL_SAVE_FILE;
+    file = File::GetSysDirectory() + "Wii" + DIR_SEP + "title" + DIR_SEP + "00010000" + DIR_SEP + "52534245" + DIR_SEP + "data" + DIR_SEP + BRAWL_SAVE_FILE;
 
   if (file.empty() || !File::Exists(file))
   {
