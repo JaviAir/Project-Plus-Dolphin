@@ -2443,6 +2443,10 @@ void MainWindow::BeginQuickPlaySearch()
                      tr("Could not join the Quick Play host. Cancel and try again.") :
                      m_quickplay_admission_error;
         },
+        [] {
+          // Only a ready recipe means a seamless search: the origin outlives a stopped game.
+          return QuickPlayRecipe::IsReady() ? QuickPlayRecipe::GetOrigin().digest : std::string();
+        },
         this);
     connect(m_quickplay_controller, &QuickPlayController::PrepareConnection, this,
             &MainWindow::PrepareQuickPlayConnection);

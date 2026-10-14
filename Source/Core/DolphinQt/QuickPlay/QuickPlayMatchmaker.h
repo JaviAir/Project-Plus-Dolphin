@@ -4,6 +4,7 @@
 #pragma once
 
 #include <functional>
+#include <string>
 
 #include <QObject>
 #include <QString>
@@ -59,8 +60,9 @@ public:
 
   using QObject::QObject;
 
+  // `origin_digest` is the seamless origin to match on, empty for an ordinary search.
   virtual void Start(const QStringList& regions, const QString& host_preference,
-                     Callback callback) = 0;
+                     const std::string& origin_digest, Callback callback) = 0;
   virtual void Poll() = 0;
   virtual void PollMatch(const QString& match_id) = 0;
   virtual void PublishHostCode(const QString& match_id, const QString& host_code) = 0;

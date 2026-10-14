@@ -28,11 +28,8 @@ public:
   explicit QuickPlayIndexMatchmaker(QObject* parent = nullptr);
   ~QuickPlayIndexMatchmaker() override;
 
-  // The index server that is used (NetPlay/IndexServer).
-  static QString GetIndexUrl();
-
   void Start(const QStringList& regions, const QString& host_preference,
-             Callback callback) override;
+             const std::string& origin_digest, Callback callback) override;
   void Poll() override;
   void PollMatch(const QString& match_id) override;
   void PublishHostCode(const QString& match_id, const QString& host_code) override;

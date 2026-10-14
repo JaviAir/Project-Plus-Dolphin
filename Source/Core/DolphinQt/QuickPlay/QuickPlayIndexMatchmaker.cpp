@@ -24,7 +24,6 @@
 #include "Common/StringUtil.h"
 #include "Common/Version.h"
 #include "Core/Config/NetplaySettings.h"
-#include "Core/QuickPlayRecipe.h"
 #include "DolphinQt/QuickPlay/QuickPlayClient.h"
 #include "UICommon/NetPlayIndex.h"
 
@@ -775,13 +774,8 @@ QuickPlayIndexMatchmaker::~QuickPlayIndexMatchmaker()
   m_worker.Shutdown();
 }
 
-QString QuickPlayIndexMatchmaker::GetIndexUrl()
-{
-  return QString::fromStdString(Config::Get(Config::NETPLAY_INDEX_URL));
-}
-
 void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& host_preference,
-                                     Callback callback)
+                                     const std::string& digest, Callback callback)
 {
   Cancel();
   auto attempt = std::make_shared<Attempt>();
@@ -800,9 +794,7 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   attempt->preference = normalized == QStringLiteral("host") ? 'h' :
                         normalized == QStringLiteral("join") ? 'j' :
                                                                'n';
-  // Without a ready recipe (desktop Quick Play), only other desktop searchers are compatible.
-  // The origin outlives a stopped game, so it alone doesn't mean a seamless search.
-  const auto digest = QuickPlayRecipe::IsReady() ? QuickPlayRecipe::GetOrigin().digest : "";
+  // Without an origin (desktop Quick Play), only other desktop searchers are compatible.
   attempt->digest8 = IsHex(digest.substr(0, 8), 8) ? digest.substr(0, 8) : "00000000";
   // Not secret: the derivation is open source. It keeps ordinary browsers out of the room and
   // checks the digest once more before the join.

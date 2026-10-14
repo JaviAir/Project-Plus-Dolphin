@@ -4,6 +4,8 @@
 #pragma once
 
 #include <cstdint>
+#include <functional>
+#include <string>
 
 #include <QObject>
 #include <QString>
@@ -48,8 +50,10 @@ public:
   using StartHost = std::function<QString(std::uint64_t)>;
   using CancelHost = std::function<void(std::uint64_t)>;
   using JoinHost = std::function<QString(const QString&)>;
+  // The seamless origin digest for a new search, or empty for an ordinary one.
+  using OriginDigest = std::function<std::string()>;
   QuickPlayController(StartHost start_host, CancelHost cancel_host, JoinHost join_host,
-                      QObject* parent = nullptr);
+                      OriginDigest origin_digest, QObject* parent = nullptr);
   ~QuickPlayController() override;
 
   State GetState() const { return m_state; }
@@ -98,6 +102,7 @@ private:
   StartHost m_start_host;
   CancelHost m_cancel_host;
   JoinHost m_join_host;
+  OriginDigest m_origin_digest;
   bool m_is_host = false;
   bool m_joining = false;
   QString m_host_code;

@@ -3,7 +3,6 @@
 #pragma once
 
 #include <algorithm>
-#include <array>
 #include <string>
 #include <utility>
 
@@ -53,10 +52,6 @@ inline std::string ContractIdentity(Policy policy, const QString& build, const Q
       .toHex()
       .toStdString();
 }
-// Official Project+ v3.2 Netplay content names the launcher "Project+ Netplay Launcher.dol";
-// this repository's Data/user copy is "Netplay Launcher.dol". The first existing name wins.
-inline constexpr std::array NETPLAY_LAUNCHER_NAMES{"Project+ Netplay Launcher.dol",
-                                                   "Netplay Launcher.dol"};
 // A copied GUI-owned declaration, consumed on the network thread without file IO.
 struct TrialLauncher
 {

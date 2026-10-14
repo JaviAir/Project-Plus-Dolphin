@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <array>
 #include <memory>
 
 #include <QString>
@@ -12,6 +13,11 @@ namespace UICommon
 {
 class GameFile;
 }
+
+// Official Project+ v3.2 Netplay content names the launcher "Project+ Netplay Launcher.dol";
+// this repository's Data/user copy is "Netplay Launcher.dol". The first existing name wins.
+inline constexpr std::array NETPLAY_LAUNCHER_NAMES{"Project+ Netplay Launcher.dol",
+                                                   "Netplay Launcher.dol"};
 
 struct QuickPlayLauncherResult
 {

@@ -21,7 +21,6 @@
 #include "Common/TraversalProto.h"
 #include "Common/Version.h"
 #include "Core/Config/NetplaySettings.h"
-#include "Core/QuickPlayRecipe.h"
 
 namespace
 {
@@ -279,7 +278,7 @@ QString QuickPlayClient::LoadHostPreference()
 }
 
 void QuickPlayClient::Start(const QStringList& regions, const QString& host_preference_input,
-                            Callback callback)
+                            const std::string& origin_digest, Callback callback)
 {
   const QString base_url =
       QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR));
@@ -302,9 +301,8 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
   const QString build = QString::fromStdString(Common::GetNetPlayCompatRevStr());
   // Matched exactly: a search with an origin keeps its running game, so only an equal origin can
   // join it. Without one (desktop), the handoff is ordinary NetPlay.
-  const auto digest = QuickPlayRecipe::IsReady() ? QuickPlayRecipe::GetOrigin().digest : "";
-  const QString session =
-      QString::fromStdString(digest.empty() ? std::string("ordinary") : "seamless/1:" + digest);
+  const QString session = QString::fromStdString(
+      origin_digest.empty() ? std::string("ordinary") : "seamless/1:" + origin_digest);
   const QString version = QString::fromStdString(Common::GetScmDescStr());
   if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(session, 128) ||
       !IsField(version, 64))

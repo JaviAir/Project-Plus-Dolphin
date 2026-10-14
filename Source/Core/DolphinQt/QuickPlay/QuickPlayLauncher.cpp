@@ -13,7 +13,6 @@
 
 #include "Common/FileUtil.h"
 #include "DolphinQt/GameList/GameListModel.h"
-#include "DolphinQt/QuickPlay/ContentPolicy.h"
 #include "UICommon/GameFile.h"
 
 namespace
@@ -84,7 +83,7 @@ QuickPlayLauncherResult FindPPlusNetplayLauncher(const GameListModel& model)
 
   // Official content first, then this build's Data/user name; the first file present wins,
   // matching the declaration in PersistentQuickPlaySession::Validate.
-  for (const auto name : QuickPlayContent::NETPLAY_LAUNCHER_NAMES)
+  for (const auto name : NETPLAY_LAUNCHER_NAMES)
   {
     const QString filename = QString::fromLatin1(name);
     if (!QFileInfo(QDir(directory).filePath(filename)).isFile())

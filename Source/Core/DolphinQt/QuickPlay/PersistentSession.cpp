@@ -31,6 +31,7 @@
 #include "Core/QuickPlayRecipe.h"
 #include "Core/State.h"
 #include "Core/System.h"
+#include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
 #include "UICommon/GameFile.h"
 
 namespace
@@ -120,7 +121,7 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
   {
     const QDir launchers(QString::fromStdString(File::GetUserPath(D_LAUNCHERS_IDX)));
     QFileInfo launcher;
-    for (const auto name : QuickPlayContent::NETPLAY_LAUNCHER_NAMES)
+    for (const auto name : NETPLAY_LAUNCHER_NAMES)
     {
       launcher = QFileInfo(launchers.filePath(QString::fromLatin1(name)));
       if (launcher.isFile())

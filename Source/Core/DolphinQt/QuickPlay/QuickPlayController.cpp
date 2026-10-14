@@ -9,9 +9,10 @@
 #include "Core/Config/NetplaySettings.h"
 
 QuickPlayController::QuickPlayController(StartHost start_host, CancelHost cancel_host,
-                                         JoinHost join_host, QObject* parent)
+                                         JoinHost join_host, OriginDigest origin_digest,
+                                         QObject* parent)
     : QObject(parent), m_start_host(std::move(start_host)), m_cancel_host(std::move(cancel_host)),
-      m_join_host(std::move(join_host))
+      m_join_host(std::move(join_host)), m_origin_digest(std::move(origin_digest))
 {
   m_setup_timer.setSingleShot(true);
   m_setup_timer.setInterval(25000);
@@ -61,7 +62,7 @@ void QuickPlayController::StartBackend(Backend backend)
   m_search_stage = QuickPlayMatchmaker::SearchStage::Normal;
   INFO_LOG_FMT(NETPLAY, "QuickPlay: searching through the {}",
                backend == Backend::Lobby ? "Dolphin lobby" : "coordinator");
-  m_matchmaker->Start(m_regions, m_host_preference,
+  m_matchmaker->Start(m_regions, m_host_preference, m_origin_digest(),
                       [this, attempt = m_attempt](QuickPlayMatchmaker::Result result) {
                         if (attempt == m_attempt &&
                             (m_state == State::Searching || m_state == State::PublishingHostCode ||
