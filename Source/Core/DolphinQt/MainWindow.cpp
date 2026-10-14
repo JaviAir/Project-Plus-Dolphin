@@ -2133,12 +2133,24 @@ void MainWindow::PublishQuickPlayPresentation()
         value.phase = PresentationPhase::Searching;
         // The regions captured when this attempt started, not the current setting.
         const auto& regions = m_quickplay_controller->GetRegions();
-        if (regions.size() == 1)
-          text = tr("Searching in %1…").arg(QuickPlayClient::GetRegionLabel(regions.front()));
-        else if (regions.size() > 1)
-          text = tr("Searching in %n regions…", "", regions.size());
+        const auto backend = m_quickplay_controller->GetBackendLabel();
+        // Kept short: the overlay has two lines, and the cancel hint follows the text.
+        const auto stage = m_quickplay_controller->GetSearchStage();
+        const QString where = regions.size() == 1 ?
+                                  QuickPlayClient::GetRegionLabel(regions.front()) :
+                                  tr("%n regions", "", regions.size());
+        if (!m_quickplay_controller->GetSearchNotice().isEmpty())
+          text = m_quickplay_controller->GetSearchNotice();
+        else if (regions.isEmpty())
+          text = tr("Searching (%1)…").arg(backend);
+        else if (stage == QuickPlayMatchmaker::SearchStage::JoinOnly)
+          text = tr("Looking for a host in %1 (%2)… %3 s")
+                     .arg(where, backend)
+                     .arg(m_quickplay_controller->GetSearchStageSeconds());
+        else if (stage == QuickPlayMatchmaker::SearchStage::JoinListed)
+          text = tr("Searching in %1 (%2), now listed…").arg(where, backend);
         else
-          text = tr("Searching…");
+          text = tr("Searching in %1 (%2)…").arg(where, backend);
         break;
       }
       case State::MatchedHost:

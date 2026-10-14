@@ -507,7 +507,8 @@ static void SendSyncIdentifier(sf::Packet& spac, const SyncIdentifier& sync_iden
 // called from ---NETPLAY--- thread
 ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Packet& received_packet)
 {
-  if (m_quickplay_cancelled)
+  // A Quick Play room is for one opponent, even after that opponent leaves.
+  if (m_quickplay_cancelled || (m_quickplay_attempt != 0 && m_quickplay_had_peer))
     return ConnectionError::ServerFull;
 
   std::string netplay_version;

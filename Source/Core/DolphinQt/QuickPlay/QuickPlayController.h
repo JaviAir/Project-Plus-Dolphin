@@ -10,6 +10,7 @@
 #include <QTimer>
 
 #include "DolphinQt/QuickPlay/QuickPlayClient.h"
+#include "DolphinQt/QuickPlay/QuickPlayIndexMatchmaker.h"
 
 // Orchestration and callbacks run on the GUI thread; the client owns HTTP work.
 class QuickPlayController final : public QObject
@@ -38,6 +39,11 @@ public:
     Error,
   };
   Q_ENUM(State)
+  enum class Backend
+  {
+    Lobby,
+    Coordinator,
+  };
 
   using StartHost = std::function<QString(std::uint64_t)>;
   using CancelHost = std::function<void(std::uint64_t)>;
@@ -50,7 +56,14 @@ public:
   // Regions searched by this attempt, and the agreed region once matched.
   const QStringList& GetRegions() const { return m_regions; }
   const QString& GetMatchRegion() const { return m_match_region; }
+  // "host", "none" or "join", as sent with this attempt.
+  const QString& GetHostPreference() const { return m_host_preference; }
   const QString& GetErrorMessage() const { return m_error_message; }
+  // The backend of the current attempt, and its latest displayable search note.
+  QString GetBackendLabel() const;
+  const QString& GetSearchNotice() const { return m_search_notice; }
+  QuickPlayMatchmaker::SearchStage GetSearchStage() const { return m_search_stage; }
+  int GetSearchStageSeconds() const { return m_search_stage_seconds; }
   bool Start();
   void Cancel();
   std::uint64_t GetGuestCancelAttempt() const;
@@ -72,9 +85,10 @@ signals:
 
 private:
   void SetState(State state);
-  void HandleResult(QuickPlayClient::Result result);
+  void StartBackend(Backend backend);
+  void HandleResult(QuickPlayMatchmaker::Result result);
 
-  void ClaimMatch(const QuickPlayClient::Result& result);
+  void ClaimMatch(const QuickPlayMatchmaker::Result& result);
   void BeginHost(std::uint64_t attempt);
   void BeginJoin(std::uint64_t attempt);
   void ConnectHost(std::uint64_t attempt);
@@ -98,5 +112,13 @@ private:
   std::uint64_t m_attempt = 0;
   bool m_entered_queue = false;
   QTimer m_poll_timer;
-  QuickPlayClient m_client;
+  QuickPlayClient m_coordinator;
+  QuickPlayIndexMatchmaker m_lobby;
+  // The backend of the current attempt.
+  Backend m_backend = Backend::Lobby;
+  QuickPlayMatchmaker* m_matchmaker = &m_lobby;
+  QString m_host_preference;
+  QString m_search_notice;
+  QuickPlayMatchmaker::SearchStage m_search_stage = QuickPlayMatchmaker::SearchStage::Normal;
+  int m_search_stage_seconds = 0;
 };

@@ -75,7 +75,7 @@ struct QuickPlayClient::Attempt
   QString client_match_id;  // GUI thread only; bound to this admission and role.
 };
 
-QuickPlayClient::QuickPlayClient(QObject* parent) : QObject(parent)
+QuickPlayClient::QuickPlayClient(QObject* parent) : QuickPlayMatchmaker(parent)
 {
 }
 
@@ -151,6 +151,14 @@ QuickPlayClient::Result QuickPlayClient::ParseResponse(int status, const QByteAr
   }
   result.error.clear();
   return result;
+}
+
+bool QuickPlayClient::HasConfiguredCoordinator()
+{
+  const auto url = Config::GetAsString(Config::NETPLAY_QUICKPLAY_COORDINATOR.GetLocation());
+  QString normalized;
+  return url && *url != Config::NETPLAY_QUICKPLAY_COORDINATOR.GetDefaultValue() &&
+         NormalizeCoordinatorUrl(QString::fromStdString(*url), &normalized).isEmpty();
 }
 
 QString QuickPlayClient::NormalizeCoordinatorUrl(const QString& input, QString* normalized)
@@ -268,9 +276,11 @@ QString QuickPlayClient::LoadHostPreference()
       QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_HOST_PREFERENCE)));
 }
 
-void QuickPlayClient::Start(const QString& base_url, const QStringList& regions,
-                            const QString& host_preference_input, Callback callback)
+void QuickPlayClient::Start(const QStringList& regions, const QString& host_preference_input,
+                            Callback callback)
 {
+  const QString base_url =
+      QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR));
   const QString host_preference = NormalizeHostPreference(host_preference_input);
   const bool regions_valid = !regions.isEmpty() && regions.size() <= MAX_REGIONS &&
                              std::all_of(regions.begin(), regions.end(), IsValidRegion) &&

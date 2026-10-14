@@ -1,6 +1,7 @@
-# Quick Play coordinator client
+# Quick Play matchmaking client
 
-Quick Play queues and pairs through Rust. The assigned host locates Netplay Launcher,
+Quick Play pairs players through the Dolphin lobby or a Rust coordinator
+(see [Matchmaking backends](#matchmaking-backends)). The assigned host locates Netplay Launcher,
 creates an unlisted normal NetPlay room, obtains its traversal code internally, and
 publishes it. The assigned client polls for the code and automatically joins the
 normal NetPlay lobby. Buffer selection and game start remain manual.
@@ -9,6 +10,81 @@ Core MVP is complete; cross-platform/cross-network and manual NetPlay validation
 were reported by the maintainer. See [tester instructions](TESTING.md) and
 [release-prep audit](RELEASE_PREP.md). Phase 7 settings are implemented; new
 Windows/Linux runtime acceptance is still pending.
+
+## Matchmaking backends
+
+**Matchmaking** in Quick Play Settings (`Main.NetPlay.QuickPlayMatchmaking`) picks
+how players find each other. Both use the same traversal server
+(`NetPlay/TraversalServer`), which only introduces the peers and never relays
+gameplay, and the same host/join, digest and settings checks.
+
+- `lobby` — **Dolphin lobby (default)**: no server of our own. Players meet
+  through Dolphin's NetPlay index (`NetPlay/IndexServer`, the server browser's
+  backend), `QuickPlayIndexMatchmaker`.
+- `coordinator` — **Custom coordinator**: the Rust `pplus-matchmaker`
+  (`QuickPlayClient`), with a fair queue and exact region matching.
+
+The default index is the public `lobby.dolphin-emu.org`. For development, run a
+local [netplay-index](https://github.com/dolphin-emu/netplay-index)
+(`uv run netplay-index`, `GEOIP_DATABASE_PATH=testdata/GeoLite2-Country.mmdb`) and
+`-C Dolphin.NetPlay.IndexServer=http://127.0.0.1:8000`.
+
+If the index cannot be reached and a coordinator other than
+the built-in `http://127.0.0.1:3000` placeholder is set, the search continues
+through that coordinator. Otherwise it fails with an error.
+
+### Lobby handshake
+
+The index has no matchmaking, locks or messages, only listings that live while
+their keepalive runs (every 5 s, 15 s timeout). Each searcher keeps at most one
+listing. The handshake is in its name, after the readable prefix
+`P+ Quick Play · PPQP1`:
+
+| Listing | Tokens | Meaning |
+| --- | --- | --- |
+| `W` | region mask, preference, digest8, nonce | Waiting for an opponent |
+| `C` | region mask, preference, digest8, waiter, nonce | Claims that waiter |
+| `A` | host (`w`/`c`), digest8, waiter, claimer | Waiter accepted that claim |
+| `H` | digest8, waiter, claimer | Host ready; `server_id` is its traversal code |
+
+- **Search.** List `name=PPQP1&password=1&version=<exact build>`. Claim a random
+  compatible `W`: same 8-character origin-digest prefix, shared region bit, not
+  blocked. If there is none, list as `W`: at once with Prefer to host, after
+  0–2 s and one more list with No preference, after 15 s of searching with Prefer
+  to join. The Prefer to join phases are shown live (`SearchStage`): the overlay
+  reads *Looking for a host in … N s*, then *Searching in …, now listed…*. The
+  searching dialog explains each phase on its own line.
+- **Waiting** (lists every 3–5 s). Accept the claim with the smallest nonce: replace
+  `W` with `A`, which names the host by the coordinator's soft rule (the claimer
+  hosts when the waiter prefers to join and the claimer does not, or the waiter has
+  no preference and the claimer prefers to host). A waiter that sees a waiting
+  player with a smaller nonce claims it instead, so two waiters converge.
+- **Claiming** (lists every 2 s). An `A` or `H` for this pair is a match. An `A` for
+  another claimer, the waiter's listing gone on two lists, or 12 s without an
+  answer blocks that waiter for 60 s and searches again.
+- **Matched.** Only now do both players leave their local game. After the handoff
+  each checks that the other's listing is still there (three lists over ~2 s). The
+  host replaces its listing with `H`; its `server_id` is the traversal code
+  obfuscated with `NetPlaySession::EncryptID`, keyed by `PPQP1:<origin digest>`.
+  That is not secrecy (the derivation is open source); it keeps stock browsers out
+  and checks the digest once more. The guest decrypts it and joins as before.
+- Every listing is removed on connect, cancel, error or the 180 s timeout.
+- A Quick Play host refuses any second guest with NetPlay's "server is full".
+
+Regions are an 11-bit mask of the listed regions (custom regions are ignored by the
+lobby; at least one listed region is required). The agreed region is the first
+shared one in checklist order. The index's own region field gets the first
+region's continent (`NA`, `SA`, `EU`, `EA`, `OC`). `W` is listed as not in game
+and the handshake listings as in game, so ordinary browsers can hide them. All are
+password-locked.
+
+Listings whose last keepalive is more than 15 s older than the newest listing have
+timed out by the index's own rule, but stay listed until a later cleanup (up to
+~45 s). They are skipped, so a crashed waiter costs searchers little.
+
+The index allows 5 sessions per public IP. When it refuses one
+(`TOO_MANY_SESSIONS`), the search shows *Your network already has the most Dolphin
+lobby rooms allowed. Waiting for a free slot.* and retries every 3 s.
 
 ## Configuration
 
@@ -24,18 +100,21 @@ Settings enables it again. Settings is disabled immediately when Quick Play is
 clicked and remains disabled until the attempt is dismissed, including errors.
 Successful lobby handoff closes the searching dialog automatically on both host
 and client, restoring settings access without closing the connected lobby.
-The searching dialog has no Settings button. It displays
-**Region: <friendly label>** for a one-region search, or **Regions: a, b, …** for
-several, from the attempt's snapshot (custom values are shown exactly). Once
-matched it shows the agreed region from the coordinator.
+The searching dialog has no Settings button. Below the status it shows two
+columns from the attempt's snapshot: **Region:** or **Regions:** with one friendly
+label per line (custom values are shown exactly), and **Host preference:**. Once
+matched the first column shows the agreed region.
 
 Save applies without restarting Dolphin or editing INI files. Cancel discards
 unsaved edits. Settings reloads current config whenever reopened.
 
-Settings use `Main.NetPlay.QuickPlayCoordinator`, `Main.NetPlay.QuickPlayRegions`
+Settings use `Main.NetPlay.QuickPlayMatchmaking` (`lobby` or `coordinator`),
+`Main.NetPlay.QuickPlayCoordinator`, `Main.NetPlay.QuickPlayRegions`
 (comma-separated tokens) and `Main.NetPlay.QuickPlayHostPreference` (`host`,
-`none` or `join`) from `Core/Config/NetplaySettings.cpp`. Defaults are
-`http://127.0.0.1:3000`, `us-east` and `none`. While `QuickPlayRegions` is empty,
+`none` or `join`) from `Core/Config/NetplaySettings.cpp`. Defaults are `lobby`,
+`http://127.0.0.1:3000`, `us-east` and `none`. The coordinator field, its
+**Show** button and **Test Connection** are enabled only for Custom coordinator;
+with the lobby, an invalid coordinator entry is left unsaved. While `QuickPlayRegions` is empty,
 the legacy single `QuickPlayRegion` value is read instead; Save writes
 `QuickPlayRegions` and removes the legacy key from the base config. Save updates effective config
 and persists the base config via Dolphin's config system. If an initial value came
@@ -78,7 +157,12 @@ case folding.
 
 **Host Preference** (`Prefer to host` / `No preference` / `Prefer to join`) is soft.
 The coordinator honours it when the two players complement each other, otherwise
-the player who queued first hosts. It never prevents or delays a match.
+the player who queued first hosts. It never prevents or delays a match. The lobby
+applies the same rule between waiter and claimer, and also uses it to decide how
+long to search before listing as waiting.
+
+Searching text names the backend: `Searching in United States — East (Dolphin
+lobby)…`, `Searching in 2 regions (custom coordinator)…`.
 
 The coordinator field is masked like a password, since a private coordinator URL
 is effectively an access secret. **Show** / **Hide** beside it toggles the mask;

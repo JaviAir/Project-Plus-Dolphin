@@ -34,8 +34,9 @@ refresh/restart. Quick Play inherits this issue; investigation is deferred.
 ## Coordinator, regions and host preference
 
 Before starting Quick Play, use **gear button beside Quick Play**. Opening
-Settings must send no HTTP request and create no matchmaking/NetPlay state. Edit
-coordinator, regions and host preference, Save, then click the main Quick Play area. The next attempt
+Settings must send no HTTP request and create no matchmaking/NetPlay state. Choose
+**Matchmaking: Custom coordinator**, edit coordinator, regions and host preference,
+Save, then click the main Quick Play area. The next attempt
 uses current config without restarting; a running attempt retains its snapshot.
 Defaults are `http://127.0.0.1:3000`, United States — East (`us-east`) and
 No preference. A profile without `QuickPlayRegions` uses its old `QuickPlayRegion`.
@@ -65,6 +66,32 @@ followed. Use HTTPS for remote private testing. **Test Connection to Coordinator
 URL text with GET `/health`, expects HTTP 200 and `{"status":"ok"}`, and reports
 success, HTTP/schema failure, or unreachable/timeout (five seconds). It never
 queues or saves. Settings Cancel discards edits.
+
+## Dolphin lobby (local index)
+
+**Matchmaking: Dolphin lobby (default)** needs no coordinator and uses the public
+`lobby.dolphin-emu.org` unless `NetPlay/IndexServer` points elsewhere. For repeatable
+runs, test against a local index:
+
+```bash
+git clone https://github.com/dolphin-emu/netplay-index && cd netplay-index
+GEOIP_DATABASE_PATH=testdata/GeoLite2-Country.mmdb uv run netplay-index --port=8000
+```
+
+Point every instance at it, for example with
+`-C Dolphin.NetPlay.IndexServer=http://127.0.0.1:8000`. To use it from another
+machine, add `--bind_address=0.0.0.0` and use that machine's address.
+`curl 'http://127.0.0.1:8000/v0/list?name=PPQP1'` shows the handshake listings.
+
+- Several instances on one machine need different `NetPlay/ListenPort` values,
+  otherwise only one of them can host at a time ("Could not initialize the
+  traversal host").
+- All local instances share one IP, so the index's 5-sessions-per-IP cap applies
+  to them together.
+- Profiles that only have the built-in coordinator URL (`http://127.0.0.1:3000`)
+  and no `QuickPlayMatchmaking` key now search the lobby. Use
+  `-C Dolphin.NetPlay.QuickPlayMatchmaking=coordinator`, or choose Custom
+  coordinator in Settings, for coordinator runs.
 
 ## Phase 7 settings acceptance
 

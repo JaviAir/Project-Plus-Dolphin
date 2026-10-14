@@ -21,9 +21,9 @@ QuickPlayController::QuickPlayController(StartHost start_host, CancelHost cancel
   m_poll_timer.setInterval(1000);
   connect(&m_poll_timer, &QTimer::timeout, this, [this] {
     if (m_state == State::Searching)
-      m_client.Poll();
+      m_matchmaker->Poll();
     else if (m_state == State::WaitingForHost)
-      m_client.PollMatch(m_match_id);
+      m_matchmaker->PollMatch(m_match_id);
   });
 }
 
@@ -43,16 +43,36 @@ bool QuickPlayController::Start()
   m_error_message.clear();
   m_regions = QuickPlayClient::LoadRegions();
   m_match_region.clear();
+  // Loaded before SetState: the searching dialog reads it on the state change.
+  m_host_preference = QuickPlayClient::LoadHostPreference();
   SetState(State::Searching);
-  m_client.Start(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)),
-                 m_regions, QuickPlayClient::LoadHostPreference(),
-                 [this, attempt = m_attempt](QuickPlayClient::Result result) {
-                   if (attempt == m_attempt &&
-                       (m_state == State::Searching || m_state == State::PublishingHostCode ||
-                        m_state == State::WaitingForHost || m_state == State::ValidatingMatch))
-                     HandleResult(std::move(result));
-                 });
+  StartBackend(Config::Get(Config::NETPLAY_QUICKPLAY_MATCHMAKING) == "coordinator" ?
+                   Backend::Coordinator :
+                   Backend::Lobby);
   return true;
+}
+
+void QuickPlayController::StartBackend(Backend backend)
+{
+  m_backend = backend;
+  m_matchmaker = backend == Backend::Lobby ? static_cast<QuickPlayMatchmaker*>(&m_lobby) :
+                                             static_cast<QuickPlayMatchmaker*>(&m_coordinator);
+  m_search_notice.clear();
+  m_search_stage = QuickPlayMatchmaker::SearchStage::Normal;
+  INFO_LOG_FMT(NETPLAY, "QuickPlay: searching through the {}",
+               backend == Backend::Lobby ? "Dolphin lobby" : "coordinator");
+  m_matchmaker->Start(m_regions, m_host_preference,
+                      [this, attempt = m_attempt](QuickPlayMatchmaker::Result result) {
+                        if (attempt == m_attempt &&
+                            (m_state == State::Searching || m_state == State::PublishingHostCode ||
+                             m_state == State::WaitingForHost || m_state == State::ValidatingMatch))
+                          HandleResult(std::move(result));
+                      });
+}
+
+QString QuickPlayController::GetBackendLabel() const
+{
+  return m_backend == Backend::Lobby ? tr("Dolphin lobby") : tr("custom coordinator");
 }
 
 std::uint64_t QuickPlayController::GetGuestCancelAttempt() const
@@ -85,7 +105,9 @@ void QuickPlayController::Cancel()
   m_setup_timer.stop();
   m_host_code.clear();
   m_match_id.clear();
-  m_client.Cancel();
+  m_matchmaker->Cancel();
+  m_search_notice.clear();
+  m_search_stage = QuickPlayMatchmaker::SearchStage::Normal;
   if (!m_creating_host && !m_joining && m_state != State::NetPlayOwned)
     m_cancel_host(cancelled_attempt);
   if (m_state != State::Idle && m_state != State::NetPlayOwned)
@@ -94,11 +116,11 @@ void QuickPlayController::Cancel()
   SetState(State::Idle);
 }
 
-void QuickPlayController::HandleResult(QuickPlayClient::Result result)
+void QuickPlayController::HandleResult(QuickPlayMatchmaker::Result result)
 {
   switch (result.state)
   {
-  case QuickPlayClient::State::Searching:
+  case QuickPlayMatchmaker::State::Searching:
     if (m_state != State::Searching)
       return;
     if (!m_entered_queue)
@@ -106,11 +128,14 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
       INFO_LOG_FMT(NETPLAY, "QuickPlay: entered queue");
       m_entered_queue = true;
     }
+    m_search_notice = std::move(result.notice);
+    m_search_stage = result.stage;
+    m_search_stage_seconds = result.stage_seconds;
     // One poll a second after the previous response, never overlapping requests.
     m_poll_timer.start();
     break;
-  case QuickPlayClient::State::MatchedHost:
-  case QuickPlayClient::State::MatchedClient:
+  case QuickPlayMatchmaker::State::MatchedHost:
+  case QuickPlayMatchmaker::State::MatchedClient:
     if (m_state == State::Searching)
     {
       ClaimMatch(result);
@@ -118,7 +143,7 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
     else if (m_state == State::ValidatingMatch)
     {
       if (result.match_id != m_match_id ||
-          (result.state == QuickPlayClient::State::MatchedHost) != m_is_host)
+          (result.state == QuickPlayMatchmaker::State::MatchedHost) != m_is_host)
       {
         Fail(tr("The Quick Play assignment changed during handoff. Cancel and try again."));
         return;
@@ -130,15 +155,15 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
       else
       {
         SetState(State::WaitingForHost);
-        m_client.PollMatch(m_match_id);
+        m_matchmaker->PollMatch(m_match_id);
       }
     }
     break;
-  case QuickPlayClient::State::WaitingForHost:
+  case QuickPlayMatchmaker::State::WaitingForHost:
     if (m_state == State::WaitingForHost && result.match_id == m_match_id)
       m_poll_timer.start();
     break;
-  case QuickPlayClient::State::HostReady:
+  case QuickPlayMatchmaker::State::HostReady:
     if (m_state != State::WaitingForHost || result.match_id != m_match_id)
       return;
     if (!QuickPlayClient::IsValidHostCode(result.host_code))
@@ -153,7 +178,7 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
     SetState(State::Connecting);
     QTimer::singleShot(0, this, [this, attempt = m_attempt] { BeginJoin(attempt); });
     break;
-  case QuickPlayClient::State::HostPublished:
+  case QuickPlayMatchmaker::State::HostPublished:
     if (m_state != State::PublishingHostCode)
       return;
     // Keep the bounded setup timeout until the opponent actually arrives.
@@ -161,21 +186,31 @@ void QuickPlayController::HandleResult(QuickPlayClient::Result result)
     INFO_LOG_FMT(NETPLAY, "QuickPlay: waiting for opponent");
     SetState(State::WaitingForOpponent);
     break;
-  case QuickPlayClient::State::Expired:
-  case QuickPlayClient::State::Error:
+  case QuickPlayMatchmaker::State::Expired:
+  case QuickPlayMatchmaker::State::Error:
+    // Only before any match: the lobby has no shared state to hand over.
+    if (result.unreachable && m_backend == Backend::Lobby && m_state == State::Searching &&
+        QuickPlayClient::HasConfiguredCoordinator())
+    {
+      WARN_LOG_FMT(NETPLAY, "QuickPlay: Dolphin lobby unavailable; using the configured "
+                            "coordinator");
+      m_lobby.Cancel();
+      StartBackend(Backend::Coordinator);
+      return;
+    }
     Fail(std::move(result.error));
     break;
   }
 }
 
-void QuickPlayController::ClaimMatch(const QuickPlayClient::Result& result)
+void QuickPlayController::ClaimMatch(const QuickPlayMatchmaker::Result& result)
 {
   // Claim the assignment before any signal or asynchronous handoff. Keep only
   // host-owned values; checkpoint restoration can invalidate guest endpoints.
   const auto attempt = m_attempt;
   m_match_id = result.match_id;
   m_match_region = result.region;
-  m_is_host = result.state == QuickPlayClient::State::MatchedHost;
+  m_is_host = result.state == QuickPlayMatchmaker::State::MatchedHost;
   m_poll_timer.stop();
   m_setup_timer.start();
   INFO_LOG_FMT(NETPLAY, "QuickPlay: claimed {} assignment, attempt {}",
@@ -210,7 +245,7 @@ void QuickPlayController::OnHandoffReady(std::uint64_t attempt, const QString& e
   // Recheck the real ticket after shutdown, before constructing any NetPlay object.
   // This catches coordinator invalidation/peer cancellation while the Core stopped.
   if (attempt == m_attempt)
-    m_client.Poll();
+    m_matchmaker->Poll();
 }
 
 void QuickPlayController::BeginJoin(std::uint64_t attempt)
@@ -272,7 +307,7 @@ void QuickPlayController::Complete()
   m_setup_timer.start();
   // No connected acknowledgement exists. One bounded DELETE releases the rendezvous;
   // readiness/launch remains attempt-owned until the normal BootGame callback.
-  m_client.Cancel();
+  m_matchmaker->Cancel();
   m_match_id.clear();
   m_host_code.clear();
   SetState(State::NetPlayConnected);
@@ -354,7 +389,7 @@ void QuickPlayController::OnHostTraversalChanged(quint64 attempt, const QString&
   INFO_LOG_FMT(NETPLAY, "QuickPlay: host code available");
   SetState(State::PublishingHostCode);
   INFO_LOG_FMT(NETPLAY, "QuickPlay: publishing host code");
-  m_client.PublishHostCode(m_match_id, m_host_code);
+  m_matchmaker->PublishHostCode(m_match_id, m_host_code);
 }
 
 void QuickPlayController::OnHostClosed(std::uint64_t attempt)

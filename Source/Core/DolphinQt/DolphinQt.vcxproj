@@ -201,6 +201,7 @@
     <ClCompile Include="QuickPlay\QuickPlayClient.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayController.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayDialog.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayIndexMatchmaker.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayLauncher.cpp" />
     <ClCompile Include="QuickPlay\QuickPlaySettingsDialog.cpp" />
     <ClCompile Include="MenuBar.cpp" />
@@ -288,7 +289,9 @@
     <ClInclude Include="QuickPlay\ContentPolicy.h" />
     <ClInclude Include="QuickPlay\PersistentSession.h" />
     <ClInclude Include="QuickPlay\QuickPlayClient.h" />
+    <ClInclude Include="QuickPlay\QuickPlayIndexMatchmaker.h" />
     <ClInclude Include="QuickPlay\QuickPlayLauncher.h" />
+    <ClInclude Include="QuickPlay\QuickPlayMatchmaker.h" />
     <ClInclude Include="QtUtils\ActionHelper.h" />
     <ClInclude Include="QtUtils\ClearLayoutRecursively.h" />
     <QtMoc Include="QtUtils\ClickableStatusBar.h" />

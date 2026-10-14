@@ -5,6 +5,7 @@
 
 #include <QDialogButtonBox>
 #include <QFontMetrics>
+#include <QHBoxLayout>
 #include <QLabel>
 #include <QPushButton>
 #include <QString>
@@ -19,8 +20,9 @@ QuickPlayDialog::QuickPlayDialog(QuickPlayController& controller, QWidget* paren
   auto* layout = new QVBoxLayout(this);
   layout->setContentsMargins(18, 18, 18, 18);
   layout->setSpacing(12);
-  auto* preview = new QLabel(tr("Quick Play pairs players through the Coordinator Server. "
-                                "The host creates a room and the opponent joins automatically."));
+  auto* preview = new QLabel(tr("Quick Play pairs players through the Dolphin lobby, or a custom "
+                                "coordinator chosen in Quick Play Settings. The host creates a "
+                                "room and the opponent joins automatically."));
   preview->setWordWrap(true);
   layout->addWidget(preview);
 
@@ -32,12 +34,24 @@ QuickPlayDialog::QuickPlayDialog(QuickPlayController& controller, QWidget* paren
   m_status->setMinimumHeight(m_status->fontMetrics().lineSpacing() * 5);
   layout->addWidget(m_status, 1);
 
+  // Regions one per line in the first column, the host preference in the second.
+  m_details = new QWidget;
+  auto* details = new QHBoxLayout(m_details);
+  details->setContentsMargins(0, 0, 0, 0);
+  details->setSpacing(48);
   m_region = new QLabel;
   m_region->setObjectName(QStringLiteral("quickplay_search_region"));
   m_region->setTextFormat(Qt::PlainText);
-  m_region->setAlignment(Qt::AlignCenter);
-  m_region->setWordWrap(true);
-  layout->addWidget(m_region);
+  m_region->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  m_host_preference = new QLabel;
+  m_host_preference->setObjectName(QStringLiteral("quickplay_search_host_preference"));
+  m_host_preference->setTextFormat(Qt::PlainText);
+  m_host_preference->setAlignment(Qt::AlignLeft | Qt::AlignTop);
+  details->addStretch();
+  details->addWidget(m_region, 0, Qt::AlignTop);
+  details->addWidget(m_host_preference, 0, Qt::AlignTop);
+  details->addStretch();
+  layout->addWidget(m_details);
 
   auto* buttons = new QDialogButtonBox(QDialogButtonBox::Cancel);
   connect(buttons, &QDialogButtonBox::rejected, this, &QuickPlayDialog::reject);
@@ -72,16 +86,21 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
   {
     const auto& region =
         m_controller.GetMatchRegion().isEmpty() ? regions.front() : m_controller.GetMatchRegion();
-    m_region->setText(tr("Region: %1").arg(QuickPlayClient::GetRegionLabel(region)));
+    m_region->setText(tr("Region:\n%1").arg(QuickPlayClient::GetRegionLabel(region)));
   }
   else
   {
     QStringList labels;
     for (const auto& region : regions)
       labels.append(QuickPlayClient::GetRegionLabel(region));
-    m_region->setText(tr("Regions: %1").arg(labels.join(QStringLiteral(", "))));
+    m_region->setText(tr("Regions:\n%1").arg(labels.join(QLatin1Char('\n'))));
   }
-  m_region->setVisible(state != QuickPlayController::State::Idle);
+  const auto& preference = m_controller.GetHostPreference();
+  m_host_preference->setText(tr("Host preference:\n%1")
+                                 .arg(preference == QStringLiteral("host") ? tr("Prefer to host") :
+                                      preference == QStringLiteral("join") ? tr("Prefer to join") :
+                                                                             tr("No preference")));
+  m_details->setVisible(state != QuickPlayController::State::Idle);
 
   switch (state)
   {
@@ -139,5 +158,22 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
 
 void QuickPlayDialog::UpdateSearchingText()
 {
-  m_status->setText(tr("Searching") + QString(m_dots, QLatin1Char('.')));
+  QString text =
+      tr("Searching (%1)").arg(m_controller.GetBackendLabel()) + QString(m_dots, QLatin1Char('.'));
+  switch (m_controller.GetSearchStage())
+  {
+  case QuickPlayMatchmaker::SearchStage::JoinOnly:
+    text += QLatin1Char('\n') + tr("Looking for a host to join. Listing yourself in %n s.", "",
+                                   m_controller.GetSearchStageSeconds());
+    break;
+  case QuickPlayMatchmaker::SearchStage::JoinListed:
+    text += QLatin1Char('\n') + tr("No host was waiting, so you are listed too. You host only if "
+                                   "your opponent also prefers to join.");
+    break;
+  case QuickPlayMatchmaker::SearchStage::Normal:
+    break;
+  }
+  if (!m_controller.GetSearchNotice().isEmpty())
+    text += QLatin1Char('\n') + m_controller.GetSearchNotice();
+  m_status->setText(text);
 }

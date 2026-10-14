@@ -34,7 +34,9 @@ private:
   void Save();
   void TestConnection();
   void InvalidateTest();
+  void UpdateMatchmaking();
 
+  QComboBox* m_matchmaking;
   QLineEdit* m_coordinator;
   QPushButton* m_show_coordinator;
   void AddRegion(const QString& value, const QString& label);

@@ -31,7 +31,17 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   setWindowModality(Qt::WindowModal);
   setMinimumWidth(460);
   auto* layout = new QVBoxLayout(this);
+  layout->setSpacing(16);
   auto* form = new QFormLayout;
+  form->setVerticalSpacing(14);
+  m_matchmaking = new QComboBox;
+  m_matchmaking->setObjectName(QStringLiteral("quickplay_matchmaking"));
+  m_matchmaking->addItem(tr("Dolphin lobby (default)"), QStringLiteral("lobby"));
+  m_matchmaking->addItem(tr("Custom coordinator"), QStringLiteral("coordinator"));
+  m_matchmaking->setToolTip(
+      tr("The Dolphin lobby needs no server of your own: players meet through Dolphin's NetPlay "
+         "server browser. A custom coordinator keeps a fair queue and finer region matching."));
+  form->addRow(tr("Matchmaking:"), m_matchmaking);
   m_coordinator = new QLineEdit;
   m_coordinator->setObjectName(QStringLiteral("quickplay_coordinator"));
   // Hidden by default: a private coordinator URL is effectively an access secret.
@@ -42,10 +52,16 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   coordinator_row->addWidget(m_coordinator);
   coordinator_row->addWidget(m_show_coordinator);
   form->addRow(tr("Coordinator Server:"), coordinator_row);
+  m_test = new QPushButton(tr("Test Connection to Coordinator Server"));
+  // Spans the coordinator field and its Show button.
+  m_test->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
+  form->addRow(QString(), m_test);
   auto* region_list = new QWidget;
   region_list->setObjectName(QStringLiteral("quickplay_regions"));
   m_region_grid = new QGridLayout(region_list);
   m_region_grid->setContentsMargins(0, 0, 0, 0);
+  m_region_grid->setVerticalSpacing(8);
+  m_region_grid->setHorizontalSpacing(16);
   for (const auto& region : QuickPlayClient::GetRegions())
     AddRegion(region.value, region.label);
   m_canonical_region_count = m_regions.size();
@@ -67,8 +83,6 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
          "so the game's own saves and tags are not kept. Applies from the next launch."));
   layout->addWidget(m_seamless);
 
-  m_test = new QPushButton(tr("Test Connection to Coordinator Server"));
-  layout->addWidget(m_test);
   m_result = new QLabel;
   m_result->setObjectName(QStringLiteral("quickplay_settings_result"));
   m_result->setTextFormat(Qt::PlainText);
@@ -83,6 +97,8 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
     m_coordinator->setEchoMode(shown ? QLineEdit::Normal : QLineEdit::Password);
     m_show_coordinator->setText(shown ? tr("Hide") : tr("Show"));
   });
+  connect(m_matchmaking, &QComboBox::currentIndexChanged, this,
+          &QuickPlaySettingsDialog::UpdateMatchmaking);
   connect(m_coordinator, &QLineEdit::textChanged, this, [this] {
     InvalidateTest();
     m_result->clear();
@@ -105,6 +121,16 @@ void QuickPlaySettingsDialog::AddRegion(const QString& value, const QString& lab
   m_regions.emplace_back(box, value);
 }
 
+void QuickPlaySettingsDialog::UpdateMatchmaking()
+{
+  const bool coordinator = m_matchmaking->currentData().toString() == QStringLiteral("coordinator");
+  m_coordinator->setEnabled(coordinator);
+  m_show_coordinator->setEnabled(coordinator);
+  m_test->setEnabled(coordinator);
+  InvalidateTest();
+  m_result->clear();
+}
+
 void QuickPlaySettingsDialog::InvalidateTest()
 {
   if (m_test_cancelled)
@@ -118,6 +144,10 @@ void QuickPlaySettingsDialog::Open()
     m_coordinator->setText(
         QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)));
     m_show_coordinator->setChecked(false);
+    const int matchmaking = m_matchmaking->findData(
+        QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_MATCHMAKING)));
+    m_matchmaking->setCurrentIndex(matchmaking < 0 ? 0 : matchmaking);
+    UpdateMatchmaking();
     // Remove previous custom entries when reopening after a config change.
     while (m_regions.size() > m_canonical_region_count)
     {
@@ -152,9 +182,11 @@ void QuickPlaySettingsDialog::done(int result)
 
 void QuickPlaySettingsDialog::Save()
 {
+  const auto matchmaking = m_matchmaking->currentData().toString().toStdString();
   QString normalized;
   const auto error = QuickPlayClient::NormalizeCoordinatorUrl(m_coordinator->text(), &normalized);
-  if (!error.isEmpty())
+  // The lobby ignores the coordinator field; an unusable entry there is left unsaved.
+  if (!error.isEmpty() && matchmaking == "coordinator")
   {
     m_result->setText(error);
     m_coordinator->setFocus();
@@ -181,8 +213,13 @@ void QuickPlaySettingsDialog::Save()
 
   // Match Dolphin's effective-layer convention, and persist even if a command-line override
   // supplied the initial value. Saving explicitly replaces that override for this run too.
-  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
-  Config::SetBase(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
+  Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_MATCHMAKING, matchmaking);
+  Config::SetBase(Config::NETPLAY_QUICKPLAY_MATCHMAKING, matchmaking);
+  if (error.isEmpty())
+  {
+    Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
+    Config::SetBase(Config::NETPLAY_QUICKPLAY_COORDINATOR, normalized.toStdString());
+  }
   Config::SetBaseOrCurrent(Config::NETPLAY_QUICKPLAY_REGIONS, joined);
   Config::SetBase(Config::NETPLAY_QUICKPLAY_REGIONS, joined);
   // Migrated into QuickPlayRegions above.
@@ -242,7 +279,7 @@ void QuickPlaySettingsDialog::TestConnection()
     QMetaObject::invokeMethod(
         this,
         [this, cancelled, message] {
-          m_test->setEnabled(true);
+          m_test->setEnabled(m_coordinator->isEnabled());
           if (!cancelled->load())
             m_result->setText(message);
         },
