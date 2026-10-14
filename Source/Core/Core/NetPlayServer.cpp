@@ -507,7 +507,7 @@ static void SendSyncIdentifier(sf::Packet& spac, const SyncIdentifier& sync_iden
 ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Packet& received_packet)
 {
   // A Quick Play room is for one opponent, even after that opponent leaves.
-  if (m_quickplay_cancelled || (m_quickplay_attempt != 0 && m_quickplay_had_peer))
+  if (m_quickplay_attempt != 0 && m_quickplay_had_peer)
     return ConnectionError::ServerFull;
 
   std::string netplay_version;
@@ -1504,17 +1504,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   }
 
   return 0;
-}
-
-bool NetPlayServer::PrepareQuickPlayCancel(u64 attempt)
-{
-  std::lock_guard lock(m_crit.game);
-  if (!attempt || attempt != m_quickplay_attempt || m_quickplay_had_peer || m_is_running ||
-      m_start_pending)
-    return false;
-  // OnConnect uses this same lock, so a peer cannot be admitted between this check and teardown.
-  m_quickplay_cancelled = true;
-  return true;
 }
 
 void NetPlayServer::NotifyHostTraversalState()
