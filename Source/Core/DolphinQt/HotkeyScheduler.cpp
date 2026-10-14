@@ -4,7 +4,6 @@
 #include "DolphinQt/HotkeyScheduler.h"
 
 #include <algorithm>
-#include <array>
 #include <cmath>
 #include <thread>
 
@@ -16,7 +15,6 @@
 #include "AudioCommon/AudioCommon.h"
 
 #include "Common/Config/Config.h"
-#include "Common/Logging/Log.h"
 #include "Common/Thread.h"
 
 #include "Core/AchievementManager.h"
@@ -163,7 +161,6 @@ void HotkeyScheduler::Run()
   Common::SetCurrentThreadName("HotkeyScheduler");
   ProjectPlusOnline::PausedCancelObserver cancel_observer;
   ProjectPlusOnline::SessionLeaveObserver leave_observer;
-  std::array<bool, 5> last_leave_trace{};
 
   while (!m_stop_requested.IsSet())
   {
@@ -213,18 +210,6 @@ void HotkeyScheduler::Run()
         leave_context.enabled && leave_pad.connected && leave_pad.focused &&
         (core_state == Core::State::Running || core_state == Core::State::Paused) &&
         leave_identity && !leave_ui_blocked;
-    // Diagnostic: one line per change of the availability inputs while a leave is published.
-    const auto leave_trace = std::array{leave_context.enabled, leave_pad.connected,
-                                        leave_pad.focused, leave_identity, leave_ui_blocked};
-    if (leave_trace != last_leave_trace && (leave_context.enabled || last_leave_trace[0]))
-    {
-      INFO_LOG_FMT(NETPLAY,
-                   "Persistent QuickPlay: leave reader available {} (enabled {} connected {} "
-                   "focused {} identity {} ui_blocked {} core_state {})",
-                   leave_available, leave_context.enabled, leave_pad.connected, leave_pad.focused,
-                   leave_identity, leave_ui_blocked, static_cast<int>(core_state));
-    }
-    last_leave_trace = leave_trace;
     ProjectPlusOnline::leave_action.Reader(leave_context, leave_available, now);
     const std::uint16_t leave_buttons = leave_available ? leave_pad.buttons : 0;
     if (leave_observer.Poll(leave_context, leave_available, leave_buttons, now, leave_pad.source))

@@ -213,8 +213,6 @@ void BindCSS(Core::System& system)
   s.css_bound = true;
   system.GetPowerPC().GetBreakPoints().SetCaptureHook(
       entry, [&system] { return OnCaptureHook(system); });
-  INFO_LOG_FMT(NETPLAY, "Quick Play recipe: CSS update entry {:08x} bound at field {} ticks {}",
-               entry, s.fields, system.GetCoreTiming().GetTicks());
 }
 
 bool PendingIOEvents(Core::System& system, std::string* which)

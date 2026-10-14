@@ -717,10 +717,6 @@ void MainWindow::ConnectHotkeys()
         // Local controller 1 held L + R + D-pad Right; revalidate the owned session first.
         const bool device_connected = ProjectPlusOnline::LocalCommandDeviceConnected();
         const bool current = ProjectPlusOnline::leave_action.Complete(request);
-        INFO_LOG_FMT(NETPLAY,
-                     "Persistent QuickPlay: leave chord received (current {} owns {} identity {})",
-                     current, OwnsInGameQuickPlay(),
-                     request.context.identity == QuickPlayIdentity());
         if (!current || !OwnsInGameQuickPlay() || request.context.identity != QuickPlayIdentity() ||
             m_quickplay_validating || m_quickplay_blocking_connection ||
             m_quickplay_recovery != QuickPlayRecovery::None || !Core::IsRunning(m_system) ||
@@ -2052,19 +2048,6 @@ void MainWindow::PublishQuickPlayPresentation()
       !m_quickplay_blocking_connection && m_quickplay_recovery == QuickPlayRecovery::None &&
       (core_state == Core::State::Running || core_state == Core::State::Paused);
   leave_action.Publish(value.identity, leave_action_enabled);
-  // Diagnostic: one line per change while a persistent session exists.
-  if (leave_action_enabled != m_quickplay_leave_enabled_logged &&
-      (m_persistent_quickplay || m_quickplay_leave_enabled_logged))
-  {
-    INFO_LOG_FMT(NETPLAY,
-                 "Persistent QuickPlay: leave enabled {} (owns {} lobby {} players {} "
-                 "supported {} modal {} validating {} recovery {})",
-                 leave_action_enabled, OwnsInGameQuickPlay(), lobby && lobby->connected,
-                 lobby ? lobby->players.size() : 0, supported,
-                 QApplication::activeModalWidget() != nullptr, m_quickplay_validating,
-                 static_cast<int>(m_quickplay_recovery));
-    m_quickplay_leave_enabled_logged = leave_action_enabled;
-  }
   const QString opponent = QuickPlayOpponentName(lobby);
   const bool left = std::chrono::steady_clock::now() < m_quickplay_left_until;
   const bool opponent_left = std::chrono::steady_clock::now() < m_quickplay_opponent_left_until;

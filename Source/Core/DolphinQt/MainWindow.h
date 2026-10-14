@@ -354,7 +354,6 @@ private:
   const NetPlay::NetPlayServer* m_persistent_server = nullptr;
   ProjectPlusOnline::EntrySource m_quickplay_entry = ProjectPlusOnline::EntrySource::Desktop;
   u64 m_quickplay_owned_attempt = 0;
-  bool m_quickplay_leave_enabled_logged = false;
   u64 m_quickplay_owner_core = 0;
   bool m_quickplay_validation_was_running = false;
   std::optional<ProjectPlusOnline::PrepaintFence> m_quickplay_validation_fence;

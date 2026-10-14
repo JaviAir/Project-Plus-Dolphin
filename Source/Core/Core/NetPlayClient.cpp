@@ -202,7 +202,6 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
       m_traversal_client->ReconnectToServer();
     m_traversal_client->m_Client = this;
     m_host_spec = address;
-    INFO_LOG_FMT(NETPLAY, "Traversal join: waiting for traversal server");
     m_connection_state = ConnectionState::WaitingForTraversalClientConnection;
     OnTraversalStateChanged();
     m_connecting = true;
@@ -222,8 +221,6 @@ NetPlayClient::NetPlayClient(const std::string& address, const u16 port, NetPlay
         switch (netEvent.type)
         {
         case ENET_EVENT_TYPE_CONNECT:
-          INFO_LOG_FMT(NETPLAY,
-                       "Traversal join: peer transport connected; starting NetPlay handshake");
           m_server = netEvent.peer;
 
           // Update time in milliseconds of no acknowledgment of
@@ -2231,7 +2228,6 @@ void NetPlayClient::OnTraversalStateChanged()
   if (m_connection_state == ConnectionState::WaitingForTraversalClientConnection &&
       state == Common::TraversalClient::State::Connected)
   {
-    INFO_LOG_FMT(NETPLAY, "Traversal join: traversal server connected; requesting host lookup");
     m_connection_state = ConnectionState::WaitingForTraversalClientConnectReady;
     m_traversal_client->ConnectToClient(m_host_spec);
   }
@@ -2249,7 +2245,6 @@ void NetPlayClient::OnConnectReady(ENetAddress addr)
 {
   if (m_connection_state == ConnectionState::WaitingForTraversalClientConnectReady)
   {
-    INFO_LOG_FMT(NETPLAY, "Traversal join: host lookup succeeded; connecting peer transport");
     m_connection_state = ConnectionState::Connecting;
     enet_host_connect(m_client, &addr, CHANNEL_COUNT, 0);
   }

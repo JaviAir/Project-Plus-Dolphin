@@ -138,9 +138,6 @@ bool PersistentQuickPlaySession::Validate(Core::System& system, QString* error)
                "Persistent QuickPlay: admitted {} policy, build {} recipe {} contract {} origin {}",
                IsTrial() ? "no-scan" : "strict", build.toStdString(), recipe.toStdString(),
                m_identity, m_origin.digest);
-  // Compare these lines between peers when their contract identities differ.
-  for (const auto& line : config.split(QLatin1Char('\n'), Qt::SkipEmptyParts))
-    INFO_LOG_FMT(NETPLAY, "Persistent QuickPlay: config {}", line.toStdString());
   return true;
 }
 

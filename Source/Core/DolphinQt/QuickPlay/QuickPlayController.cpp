@@ -182,8 +182,7 @@ void QuickPlayController::HandleResult(QuickPlayMatchmaker::Result result)
     if (m_state != State::PublishingHostCode)
       return;
     // Keep the bounded setup timeout until the opponent actually arrives.
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: host code published");
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: waiting for opponent");
+    INFO_LOG_FMT(NETPLAY, "QuickPlay: host code published, waiting for opponent");
     SetState(State::WaitingForOpponent);
     break;
   case QuickPlayMatchmaker::State::Expired:
@@ -268,7 +267,6 @@ void QuickPlayController::ContinueConnection(std::uint64_t attempt, bool host, c
 
 void QuickPlayController::ConnectJoin(std::uint64_t attempt)
 {
-  INFO_LOG_FMT(NETPLAY, "QuickPlay: invoking NetPlay join");
   m_joining = true;
   const auto error = m_join_host(m_host_code);
   m_joining = false;
@@ -285,7 +283,6 @@ void QuickPlayController::ConnectJoin(std::uint64_t attempt)
     Fail(error);
     return;
   }
-  INFO_LOG_FMT(NETPLAY, "QuickPlay: NetPlay join started");
   INFO_LOG_FMT(NETPLAY, "QuickPlay: client connection established");
   Complete();
 }
@@ -384,8 +381,6 @@ void QuickPlayController::OnHostTraversalChanged(quint64 attempt, const QString&
   m_host_code = code;
   if (m_state == State::CreatingHost)
     return;
-  INFO_LOG_FMT(NETPLAY, "QuickPlay: traversal ready");
-  INFO_LOG_FMT(NETPLAY, "QuickPlay: host code available");
   SetState(State::PublishingHostCode);
   INFO_LOG_FMT(NETPLAY, "QuickPlay: publishing host code");
   m_matchmaker->PublishHostCode(m_match_id, m_host_code);
