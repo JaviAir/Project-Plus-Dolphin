@@ -114,7 +114,6 @@ private:
   QTimer m_poll_timer;
   QuickPlayClient m_coordinator;
   QuickPlayIndexMatchmaker m_lobby;
-  // The backend of the current attempt.
   Backend m_backend = Backend::Lobby;
   QuickPlayMatchmaker* m_matchmaker = &m_lobby;
   QString m_host_preference;

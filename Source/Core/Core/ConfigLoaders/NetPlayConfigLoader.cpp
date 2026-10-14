@@ -209,9 +209,8 @@ bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings, std::str
   check(Config::MAIN_CPU_CORE, "Config::MAIN_CPU_CORE");
   check(Config::MAIN_ENABLE_CHEATS, "Config::MAIN_ENABLE_CHEATS");
 #ifdef USE_RETRO_ACHIEVEMENTS
-  // SetupNetSettings negotiates effective achievement state, not the preference.
-  // With achievements inactive, a configured true preference has no runtime effect.
-  // Active hardcore still must agree; Movie/TAS sessions are rejected by admission.
+  // SetupNetSettings negotiates the effective hardcore state, not the preference, and only
+  // that must agree. Movie/TAS sessions are rejected by admission.
   const bool active_hardcore = AchievementManager::GetInstance().IsHardcoreModeActive();
   if (ok && settings.enable_hardcore != active_hardcore)
   {

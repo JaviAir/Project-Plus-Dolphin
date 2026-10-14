@@ -9,9 +9,8 @@
 #include "Core/ProjectPlusOnline/Chord.h"
 #include "InputCommon/GCPadStatus.h"
 
-// One local-command source: the logical GC buttons of this instance's local
-// controller 1, whichever supported input drives it. Search, cancel, paused
-// setup B and later session actions read this, never a particular device.
+// Local commands read the logical GC buttons of this instance's controller 1, whichever
+// supported input drives it, never a particular device.
 namespace ProjectPlusOnline
 {
 enum class LocalPadSource : std::uint8_t

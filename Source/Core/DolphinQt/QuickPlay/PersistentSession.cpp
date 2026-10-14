@@ -195,9 +195,8 @@ void PersistentQuickPlaySession::Restore(Core::System& system, std::function<voi
                     loaded, file, system.GetCoreTiming().GetTicks(), system.GetPPCState().pc,
                     digest, origin.digest, detail, int(si.GetDeviceType(0)),
                     int(si.GetDeviceType(1)), int(si.GetDeviceType(2)), int(si.GetDeviceType(3)));
-    // The live devices came from the origin. Pin the desired types to them
-    // so the next SI poll cannot swap in a locally configured Wii U adapter
-    // device; that port remains an input source of the standard controller.
+    // Pin the desired types to the origin's live devices, so the next SI poll cannot swap in a
+    // configured Wii U adapter; that port stays an input source of the standard controller.
     for (int port = 0; ok && port < 4; ++port)
       si.ChangeDevice(si.GetDeviceType(port), port);
     if (ok)

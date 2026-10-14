@@ -519,8 +519,7 @@ void OnScreenUI::DrawQuickPlayStatus()
   }
   const ImVec2 text_size = ImGui::CalcTextSize(text.c_str(), nullptr, false, width);
   const float height = text_size.y + padding * 2;
-  // Prefer the measured upper letterbox; the compact viewport fallback still
-  // requires user capture review in Step4. Never move/resize the game viewport.
+  // Prefer the upper letterbox. Never move or resize the game viewport.
   const float top =
       target.top >= height + padding ? padding : std::max(padding, float(target.top) + padding);
   if (presentation_core_generation.load() != core || persistent_input_epoch.load() != input ||

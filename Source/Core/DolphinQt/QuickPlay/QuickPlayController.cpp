@@ -242,8 +242,7 @@ void QuickPlayController::OnHandoffReady(std::uint64_t attempt, const QString& e
   }
   INFO_LOG_FMT(NETPLAY, "QuickPlay: boundary prepared, validating attempt {}", attempt);
   SetState(State::ValidatingMatch);
-  // Recheck the real ticket after shutdown, before constructing any NetPlay object.
-  // This catches coordinator invalidation/peer cancellation while the Core stopped.
+  // Recheck the match after the Core stopped, before constructing any NetPlay object.
   if (attempt == m_attempt)
     m_matchmaker->Poll();
 }

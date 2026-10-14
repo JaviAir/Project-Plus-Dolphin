@@ -47,8 +47,8 @@ namespace QuickPlayRecipe
 {
 namespace
 {
-// Guest binding for Project+ v3.2 (RSBE01 rev 1 plus the official SD's codes), verified by
-// the portable-sync Step 3 Gate 1 audit. Module addresses come from the OS module list.
+// Guest binding for Project+ v3.2 (RSBE01 rev 1 plus the official SD's codes). Module
+// addresses come from the OS module list.
 constexpr u32 MODULE_HEAD = 0x800030c8;
 constexpr u32 SCENE_PTR = 0x805b8ba4;
 constexpr u32 SCENE_MANAGER_PTR = 0x805a0060;  // r13-0x43c0, returned by 8002d018
@@ -244,9 +244,9 @@ bool PendingIOEvents(Core::System& system, std::string* which)
   return any;
 }
 
-// Predicate css-init-v1 (STEP3-REPORT.md, Gate 1): the published CSS task is settled, both
-// standard controllers are detected with their areas active, ports 3/4 are absent, no
-// input other than neutral was consumed and no guest I/O is in flight or newly issued.
+// Predicate css-init-v1: the published CSS task is settled, both standard controllers are
+// detected with their areas active, ports 3/4 are absent, no input other than neutral was
+// consumed and no guest I/O is in flight or newly issued.
 bool EvaluatePredicate(Core::System& system, u32 task, std::string* why)
 {
   auto& mem = system.GetMemory();
@@ -451,7 +451,7 @@ void ForceSettings()
   SetCurrent(Config::GFX_HACK_EFB_DEFER_INVALIDATION, false);
   SetCurrent(Config::GFX_HACK_SKIP_DUPLICATE_XFBS, false);
   SetCurrent(Config::GFX_PERF_QUERIES_ENABLE, false);
-  // Rendering inputs the research recipe left at their defaults.
+  // Rendering inputs that stay at their defaults.
   SetCurrent(Config::GFX_HACK_FAST_TEXTURE_SAMPLING,
              Config::GFX_HACK_FAST_TEXTURE_SAMPLING.GetDefaultValue());
   SetCurrent(Config::GFX_HACK_MISSING_COLOR_VALUE,

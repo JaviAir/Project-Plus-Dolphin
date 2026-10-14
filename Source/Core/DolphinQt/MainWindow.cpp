@@ -208,9 +208,7 @@ static WindowSystemType GetWindowSystemType()
   return WindowSystemType::Headless;
 }
 
-// Persistent Quick Play (same-Core handoff) is supported on X11, including XWayland,
-// and on Windows. The single-core and separate render window requirements
-// are checked separately.
+// Seamless Quick Play supports X11 (including XWayland) and Windows.
 static bool IsQuickPlayWindowSystem()
 {
   const QString platform_name = QGuiApplication::platformName();
@@ -2372,9 +2370,8 @@ void MainWindow::ValidateQuickPlayContent(u64 attempt, std::function<void(bool, 
     finished(valid, std::move(error));
     PublishQuickPlayStatus();
   };
-  // Trial admission has bounded IO only. Keep the same pause/ownership fences,
-  // but do not enqueue a verification prepaint or expose Checking game files.
-  // Complete on a later event-loop turn, like the strict prepaint callback.
+  // Trial admission has bounded IO only: no verification prepaint, but complete on a later
+  // event-loop turn with the same pause/ownership fences, like the strict callback.
   if (trial)
     QTimer::singleShot(0, this, [admit = std::move(admit)] { admit(true); });
   else
@@ -2815,10 +2812,8 @@ void MainWindow::RetirePersistentQuickPlay(bool restore_css)
     if (client)
       client->DetachPersistentSession();
     Config::RemoveLayer(Config::LayerType::Netplay);
-    // Restore local desired-device ownership as well as the live checkpoint's
-    // device instances. A late mapping/disconnect notification must not leave
-    // a pending NetPlay device request behind for the next local SI poll. A
-    // successful CSS restore then pins them to the checkpoint's standard devices.
+    // Restore the local desired devices too, so no NetPlay device request is left for the
+    // next local SI poll. A CSS restore then pins them to the checkpoint's devices.
     for (int port = 0; port < 4; ++port)
       m_system.GetSerialInterface().ChangeDevice(Config::Get(Config::GetInfoForSIDevice(port)), port);
     Core::UpdateWantDeterminism(m_system);

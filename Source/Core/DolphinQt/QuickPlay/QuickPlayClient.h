@@ -20,7 +20,6 @@ public:
   explicit QuickPlayClient(QObject* parent = nullptr);
   ~QuickPlayClient() override;
 
-  // Uses the configured coordinator URL.
   void Start(const QStringList& regions, const QString& host_preference,
              Callback callback) override;
   // A valid coordinator URL is set (there is no default), so it can take a search.

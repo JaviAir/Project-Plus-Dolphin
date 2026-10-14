@@ -14,9 +14,8 @@ namespace Core
 class System;
 }
 
-// GUI-thread owner of one supported same-Core admission. The origin is the CSS state this
-// Core generated under the Quick Play recipe at boot; the contract pins the build, recipe
-// and effective configuration. It never saves or merges the player's pre-search guest state.
+// GUI-thread owner of one same-Core admission: restores the origin this Core generated under
+// the Quick Play recipe at boot. Never saves or merges the player's pre-search guest state.
 class PersistentQuickPlaySession final
 {
 public:

@@ -198,11 +198,8 @@ void HotkeyScheduler::Run()
         emit CancelPausedQuickPlay(*request);
     }
 
-    // Session leave from shared CSS, stage select, gameplay or results. Read-only:
-    // the guest still receives these buttons. It follows the guest's own focus
-    // policy, like the search chord: with Background Input the controller that
-    // drives this instance may leave it unfocused. Real overlay use (chat typing,
-    // a held widget) still blocks it.
+    // Session leave. Read-only: the guest still receives these buttons. Follows the guest's
+    // focus policy (Background Input) like the search chord; overlay use still blocks it.
     const auto leave_context = ProjectPlusOnline::leave_action.Read(now);
     Core::UpdateInputGate(!Config::Get(Config::MAIN_INPUT_BACKGROUND_INPUT));
     const auto leave_pad = leave_context.enabled ? ProjectPlusOnline::PeekLocalCommandPad() :

@@ -30,11 +30,9 @@ constexpr Policy SelectedPolicy()
   return Policy::Strict;
 #endif
 }
-// Peers ready together only with equal build, recipe and effective configuration. Each peer
-// generates its own origin; its digest is compared separately in the ready handshake.
-// In-memory data only. Explicit appends: DolphinQt builds with QT_USE_QSTRINGBUILDER.
-// The hashed text: policy, build and recipe lines, then the "name=value" configuration lines.
-// Peers also exchange it so a refusal can name what differs.
+// The contract peers must share: policy, build and recipe lines, then "name=value"
+// configuration lines. Peers exchange it so a refusal can name what differs; the origin digest
+// is compared separately. Explicit appends: DolphinQt builds with QT_USE_QSTRINGBUILDER.
 inline QByteArray ContractText(Policy policy, const QString& build, const QString& recipe,
                                const QString& config)
 {

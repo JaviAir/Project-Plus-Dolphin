@@ -2157,7 +2157,7 @@ bool NetPlayClient::ChangeGame(const std::string&)
 void NetPlayClient::UpdateDevices()
 {
   // A persistent lobby does not own live SI devices yet. In particular the
-  // one-player host lobby must not schedule removal of the fixture's P2 device.
+  // one-player host lobby must not schedule removal of the restored P2 device.
   if (m_persistent_session && !m_is_running.IsSet())
     return;
   u8 local_pad = 0;

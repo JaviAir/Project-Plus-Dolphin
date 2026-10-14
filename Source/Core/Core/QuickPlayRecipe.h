@@ -18,8 +18,7 @@ class System;
 // boots under the same clock, private temporary NAND, forced settings and neutral input,
 // stops at the first verified CSS origin, saves it to a private file and hands control to
 // the player on the same Core. Peers then restore their own origin on join instead of a
-// shared checkpoint. Portable-sync research recipe portable-css-ab/2 (STEP4-REPORT.md); /3
-// leaves EFB/XFB copy pixels out of the digest.
+// shared checkpoint.
 namespace QuickPlayRecipe
 {
 inline constexpr char RECIPE_ID[] = "portable-css-ab/3";
@@ -75,11 +74,10 @@ void ReleaseExtraPorts(Core::System& system);
 // has dropped the port 2 hand: the game image is covered so that hand is never shown locally.
 bool ConcealsGame();
 
-// Local CSS snapshot: once the CSS has dropped the port 2 hand after capture, the frontend
-// saves this Core's own hand-free CSS so leaving a match can return to it without the cover.
-// It is private to this run and never compared with a peer; a join still restores the origin.
-// Host thread: called when the snapshot is due. The frontend either takes it (SaveLocalSnapshot
-// on the paused CPU thread) or skips it; either way it then calls FinishLocalSnapshot.
+// Local CSS snapshot: this Core's own hand-free CSS, so leaving a match can return to it
+// without the cover. Private to this run; a join still restores the origin.
+// Host thread: called when the snapshot is due. The frontend takes it (SaveLocalSnapshot on
+// the paused CPU thread) or skips it, then calls FinishLocalSnapshot.
 void SetLocalSnapshotHandler(std::function<void()> handler);
 std::string LocalSnapshotPath();
 // CPU thread, Core paused.

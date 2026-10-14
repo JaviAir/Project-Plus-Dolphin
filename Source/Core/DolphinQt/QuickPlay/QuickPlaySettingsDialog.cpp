@@ -54,7 +54,6 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   coordinator_row->addWidget(m_show_coordinator);
   form->addRow(tr("Coordinator Server:"), coordinator_row);
   m_test = new QPushButton(tr("Test Connection to Coordinator Server"));
-  // Spans the coordinator field and its Show button.
   m_test->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Fixed);
   form->addRow(QString(), m_test);
   auto* region_list = new QWidget;
