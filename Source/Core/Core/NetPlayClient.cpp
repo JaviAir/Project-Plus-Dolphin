@@ -9,7 +9,6 @@
 #include <array>
 #include <cstddef>
 #include <cstring>
-#include <cstdlib>
 #include <functional>
 #include <memory>
 #include <mutex>
@@ -801,9 +800,6 @@ void NetPlayClient::OnPadData(sf::Packet& packet)
     if (static_cast<size_t>(map) < m_pad_buffer.size())
     {
       m_pad_buffer.at(map).Push(pad);
-      if (std::getenv("PPLUS_PHASE93_ATTACH"))
-        std::fprintf(stderr, "PHASE93 ENet receive: port=%d x=%u y=%u buttons=%u\n",
-                     map, pad.stickX, pad.stickY, pad.button);
       m_gc_pad_event.Set();
     }
   }
@@ -1952,17 +1948,6 @@ bool NetPlayClient::ValidatePersistentAttach()
   return true;
 }
 
-bool NetPlayClient::ResearchAttachRunningCore(bool validate_only)
-{
-  if (!std::getenv("PPLUS_PHASE93_ATTACH") ||
-      Core::System::GetInstance().GetPPCState().pc != 0x806876d4 || !ValidatePersistentAttach())
-    return false;
-  if (validate_only)
-    return true;
-  Config::AddLayer(ConfigLoaders::GenerateNetPlayConfigLoader(m_net_settings));
-  return StartGameImpl({}, true);
-}
-
 bool NetPlayClient::PreparePersistentSession(u32 game, const std::string& identity,
                                              const std::string& origin,
                                              const std::string& contract_text)
@@ -2018,16 +2003,7 @@ void NetPlayClient::DetachPersistentSession()
   m_persistent_released = false;
 }
 
-std::string NetPlayClient::ResearchSessionState()
-{
-  const auto lobby = GetLobbyState();
-  return fmt::format("game={} local={} running={} minimum={} timebase_frame={} queues={},{},{},{} buffers={},{} maps={},{},{},{} accurate_fmadds={} runtime={}\n",
-      lobby.current_game, lobby.local_player, lobby.running, lobby.minimum_buffer, m_timebase_frame,
-      m_pad_buffer[0].Size(), m_pad_buffer[1].Size(), m_pad_buffer[2].Size(), m_pad_buffer[3].Size(),
-      BufferSizeForPort(0), BufferSizeForPort(1), lobby.pads[0], lobby.pads[1], lobby.pads[2], lobby.pads[3], m_net_settings.accurate_fmadds, IsNetPlayRunning());
-}
-
-bool NetPlayClient::StartGameImpl(const std::string& path, bool research_attach)
+bool NetPlayClient::StartGameImpl(const std::string& path, bool attach_running)
 {
   std::lock_guard lkg(m_crit.game);
   SendStartGamePacket();
@@ -2049,7 +2025,7 @@ bool NetPlayClient::StartGameImpl(const std::string& path, bool research_attach)
 
   m_first_pad_status_received.fill(false);
 
-  if (research_attach)
+  if (attach_running)
   {
     // Existing startup has initialized the epoch/FIFOs; install runtime determinism,
     // keeping Core ticks, Movie counters, SRAM and all live devices continuous.
@@ -2453,12 +2429,7 @@ bool NetPlayClient::GetNetPads(const int pad_nb, const bool batching, GCPadStatu
     m_gc_pad_event.Wait();
   }
 
-  const auto queued = m_pad_buffer[pad_nb].Size();
   m_pad_buffer[pad_nb].Pop(*pad_status);
-  if (std::getenv("PPLUS_PHASE93_ATTACH"))
-    std::fprintf(stderr, "PHASE93 FIFO pop: port=%d queued=%zu target=%u x=%u y=%u buttons=%u\n",
-                 pad_nb, queued, BufferSizeForPort(pad_nb), pad_status->stickX,
-                 pad_status->stickY, pad_status->button);
 
   auto& movie = Core::System::GetInstance().GetMovie();
   if (movie.IsRecordingInput())
@@ -2557,10 +2528,6 @@ bool NetPlayClient::PollLocalPad(const int local_pad, sf::Packet& packet)
     {
       // add to buffer
       m_pad_buffer[ingame_pad].Push(pad_status);
-      if (std::getenv("PPLUS_PHASE93_ATTACH"))
-        std::fprintf(stderr, "PHASE93 local enqueue: local=%d port=%d target=%u x=%u y=%u buttons=%u\n",
-                     local_pad, ingame_pad, BufferSizeForPort(ingame_pad), pad_status.stickX,
-                     pad_status.stickY, pad_status.button);
 
       // add to packet
       AddPadStateToPacket(ingame_pad, pad_status, packet);

@@ -8,7 +8,6 @@
 #include <chrono>
 #include <cstddef>
 #include <cstdio>
-#include <cstdlib>
 #include <memory>
 #include <mutex>
 #include <optional>
@@ -998,9 +997,6 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
 
         spac << pad.analogA << pad.analogB << pad.stickX << pad.stickY << pad.substickX
              << pad.substickY << pad.triggerLeft << pad.triggerRight << pad.isConnected;
-        if (std::getenv("PPLUS_PHASE93_ATTACH"))
-          std::fprintf(stderr, "PHASE93 server relay: owner=%u port=%d x=%u y=%u buttons=%u\n",
-                       player.pid, map, pad.stickX, pad.stickY, pad.button);
       }
     }
 
@@ -1636,11 +1632,10 @@ bool NetPlayServer::SetupNetSettings()
 
   NetPlay::NetSettings settings;
 
-  const bool live_research = (m_persistent_session || std::getenv("PPLUS_PHASE93_ATTACH")) &&
-                             Core::IsRunning(Core::System::GetInstance());
+  const bool live_session = m_persistent_session && Core::IsRunning(Core::System::GetInstance());
 
   // Load GameINI so we can sync the settings from it
-  if (!live_research)
+  if (!live_session)
   {
     Config::AddLayer(
         ConfigLoaders::GenerateGlobalGameConfigLoader(game->GetGameID(), game->GetRevision()));
@@ -1755,7 +1750,7 @@ bool NetPlayServer::SetupNetSettings()
   settings.spectator_mode = Config::Get(Config::NETPLAY_SPECTATOR_MODE);
 
   // Unload GameINI to restore things to normal
-  if (!live_research)
+  if (!live_session)
   {
     Config::RemoveLayer(Config::LayerType::GlobalGame);
     Config::RemoveLayer(Config::LayerType::LocalGame);

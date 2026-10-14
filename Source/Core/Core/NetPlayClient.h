@@ -155,8 +155,6 @@ public:
   // Called from the GUI thread.
   bool IsConnected() const { return m_is_connected && !m_connection_lost; }
   bool StartGame(const std::string& path);
-  // Disposable CSS-only experiment; never used by the production frontend.
-  bool ResearchAttachRunningCore(bool validate_only = false);
   bool IsPersistentSession() const { return m_persistent_session; }
   // Set when the last persistent attach check found a setting that differs from the host's.
   const std::string& PersistentConfigMismatch() const { return m_persistent_config_mismatch; }
@@ -166,7 +164,6 @@ public:
   bool ReleasePersistentSession(u32 game);
   // Wake every input wait before pausing, then disable the runtime under the CPU guard.
   void DetachPersistentSession();
-  std::string ResearchSessionState();
   void InvokeStop();
   bool StopGame();
   void Stop();
@@ -323,7 +320,7 @@ private:
     Failure
   };
 
-  bool StartGameImpl(const std::string& path, bool research_attach);
+  bool StartGameImpl(const std::string& path, bool attach_running);
   bool ValidatePersistentAttach();
   const bool m_persistent_session;
   std::string m_persistent_config_mismatch;

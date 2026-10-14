@@ -5,8 +5,6 @@
 #include "Core/ProjectPlusOnline/Presentation.h"
 
 #include <algorithm>
-#include <cstdio>
-#include <cstdlib>
 #include <filesystem>
 #include <locale>
 #include <map>
@@ -54,7 +52,6 @@
 
 #include "VideoCommon/FrameDumpFFMpeg.h"
 #include "VideoCommon/OnScreenDisplay.h"
-#include "VideoCommon/Present.h"
 #include "VideoCommon/VideoBackendBase.h"
 
 namespace State
@@ -189,8 +186,6 @@ static void DoState(Core::System& system, PointerWrap& p)
   // HW needs to be restored before PowerPC because the data cache might need to be flushed.
   HW::DoState(system, p);
   p.DoMarker("HW");
-  if (p.IsReadMode())
-    g_presenter->ResearchXFBProbe("after-hw-restore");
 
   system.GetPowerPC().DoState(p);
   p.DoMarker("PowerPC");
@@ -204,9 +199,6 @@ static void DoState(Core::System& system, PointerWrap& p)
 #ifdef USE_RETRO_ACHIEVEMENTS
   AchievementManager::GetInstance().DoState(p);
 #endif  // USE_RETRO_ACHIEVEMENTS
-
-  if (p.IsReadMode() && std::getenv("PPLUS_PHASE91_DEFER_XFB"))
-    g_presenter->ResearchRedrawAfterStateLoad();
 }
 
 static bool CheckIfStateLoadIsAllowed(Core::System& system)
@@ -239,21 +231,13 @@ static bool LoadFromBuffer(Core::System& system, std::span<u8> buffer)
 }
 
 // Returns the required size, or 0 on failure.
-static std::size_t SaveToBuffer(Core::System& system, Common::UniqueBuffer<u8>& buffer,
-                              std::string* research_markers = nullptr)
+static std::size_t SaveToBuffer(Core::System& system, Common::UniqueBuffer<u8>& buffer)
 {
   // Attempt to save to our provided buffer as-is.
   // If buffer isn't large enough, PointerWrap transitions to MeasureMode,
   //  and then we have our measurement for a second attempt.
   u8* ptr = buffer.data();
   PointerWrap pointer_wrap(&ptr, buffer.size(), PointerWrap::Mode::Write);
-  if (research_markers)
-  {
-    research_markers->clear();
-    pointer_wrap.research_marker = [&](const std::string& name, u8* end) {
-      *research_markers += fmt::format("{}\t{}\n", end - buffer.data(), name);
-    };
-  }
   DoState(system, pointer_wrap);
   const auto measured_size = pointer_wrap.GetOffsetFromPreviousPosition(buffer.data());
 
@@ -268,7 +252,7 @@ static std::size_t SaveToBuffer(Core::System& system, Common::UniqueBuffer<u8>& 
     DEBUG_LOG_FMT(CORE, "SaveToBuffer: Growing buffer from size {} to measured size {}",
                   buffer.size(), measured_size);
     buffer.reset(measured_size);
-    return SaveToBuffer(system, buffer, research_markers);
+    return SaveToBuffer(system, buffer);
   }
 
   // Buffer was large enough but we still failed for some other reason.
@@ -823,37 +807,6 @@ static void LoadFileStateData(const std::string& filename, Common::UniqueBuffer<
   ret_data.swap(buffer);
 }
 
-// Temporary, environment-gated Phase 9.1 probe. Uses the ordinary serializer on the
-// CPU thread, after load completion and before another guest instruction can run.
-bool ResearchExport(Core::System& system, const std::string& name)
-{
-  const char* directory = std::getenv("PPLUS_PHASE91_DIR");
-  if (!directory || !*directory)
-    return false;
-
-  Common::UniqueBuffer<u8> buffer;
-  std::string markers;
-  const auto size = SaveToBuffer(system, buffer, &markers);
-  const std::string base = std::string(directory) + "/" + name;
-  const auto& movie = system.GetMovie();
-  const std::string origin = fmt::format(
-      "ticks={}\nmovie_frame={}\nmovie_input={}\ncore_state={}\nbytes={}\npc={:08x}\nr3={:08x}\n",
-      system.GetCoreTiming().GetTicks(), movie.GetCurrentFrame(), movie.GetCurrentInputCount(),
-      static_cast<int>(Core::GetState(system)), size, system.GetPPCState().pc,
-      system.GetPPCState().gpr[3]);
-  File::IOFile output(base + ".bin", "wb");
-  const bool ok = size && output.WriteBytes(buffer.data(), size) && output.Close() &&
-                  File::WriteStringToFile(base + ".markers.tsv", markers) &&
-                  File::WriteStringToFile(base + ".origin.txt", origin);
-  std::fprintf(stderr, "Phase 9.1: post-load probe %s: %s\n", ok ? "written" : "FAILED",
-               base.c_str());
-  std::fflush(stderr);
-  Core::DisplayMessage(ok ? "Phase 9.1: post-load probe written" :
-                            "Phase 9.1: probe FAILED (check output directory)",
-                       10000);
-  return ok;
-}
-
 static void LoadAsFromCore(Core::System& system, std::string filename)
 {
   // Ensure all data has reached the filesystem before trying to use it.
@@ -913,21 +866,12 @@ static void LoadAsFromCore(Core::System& system, std::string filename)
 
   if (s_on_after_load_callback)
     s_on_after_load_callback();
-
-  if (loaded_successfully)
-    ResearchExport(system, "restored");
 }
 
 void LoadAs(Core::System& system, std::string filename)
 {
   if (!CheckIfStateLoadIsAllowed(system))
     return;
-
-  if (std::getenv("PPLUS_PHASE91_DIR") && Core::GetState(system) != Core::State::Paused)
-  {
-    Core::DisplayMessage("Phase 9.1: pause before loading the checkpoint", 10000);
-    return;
-  }
 
   ProjectPlusOnline::InvalidatePresentationCore();
   Core::RunOnCPUThread(system, [&system, filename = std::move(filename)]() mutable {

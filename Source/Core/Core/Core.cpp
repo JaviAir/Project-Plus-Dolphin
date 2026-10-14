@@ -53,7 +53,6 @@
 #include "Core/HW/CPU.h"
 #include "Core/HW/DSP.h"
 #include "Core/HW/EXI/EXI.h"
-#include "Core/HW/EXI/EXI_DeviceProjectPlusOnline.h"
 #include "Core/HW/GBAPad.h"
 #include "Core/HW/GCKeyboard.h"
 #include "Core/HW/GCPad.h"
@@ -958,8 +957,6 @@ void UpdateWantDeterminism(Core::System& system, bool initial)
     NOTICE_LOG_FMT(COMMON, "Want determinism <- {}", new_want_determinism ? "true" : "false");
 
     s_wants_determinism = new_want_determinism;
-    if (new_want_determinism)
-      ExpansionInterface::InvalidateProjectPlusOnline(system);
     const auto ios = system.GetIOS();
     if (ios)
       ios->UpdateWantDeterminism(new_want_determinism);

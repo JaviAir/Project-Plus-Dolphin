@@ -12,7 +12,6 @@
 #include "Core/Core.h"
 #include "Core/CoreTiming.h"
 #include "Core/HW/DVD/DVDInterface.h"
-#include "Core/HW/EXI/EXI_DeviceProjectPlusOnline.h"
 #include "Core/HW/MMIO.h"
 #include "Core/HW/SystemTimers.h"
 #include "Core/IOS/IOS.h"
@@ -225,8 +224,6 @@ void ProcessorInterfaceManager::SetInterrupt(u32 cause_mask, bool set)
 
 void ProcessorInterfaceManager::SetResetButton(bool set)
 {
-  if (set)
-    ExpansionInterface::InvalidateProjectPlusOnline(m_system);
   SetInterrupt(INT_CAUSE_RST_BUTTON, !set);
 }
 

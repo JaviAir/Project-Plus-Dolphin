@@ -109,8 +109,6 @@ public:
   int FrameCount() const { return m_frame_count; }
 
   void DoState(PointerWrap& p);
-  void ResearchXFBProbe(const char* phase) const;  // Temporary Phase 9.1 probe
-  void ResearchRedrawAfterStateLoad();  // Temporary Phase 9.1 experiment
 
   const MathUtil::Rectangle<int>& GetTargetRectangle() const { return m_target_rectangle; }
 

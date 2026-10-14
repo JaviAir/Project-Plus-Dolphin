@@ -25,6 +25,4 @@ GenerateNetPlayConfigLoader(const NetPlay::NetSettings& settings);
 bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings,
                                   std::string* mismatch = nullptr);
 std::string RunningNetPlayConfigIdentity();
-// Retained research wrapper.
-bool ResearchValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings);
 }

@@ -4,13 +4,13 @@
 #include "Core/ConfigLoaders/NetPlayConfigLoader.h"
 
 #include <memory>
-#include <cstdio>
 #include <utility>
 
 #include <fmt/format.h>
 
 #include "Common/CommonPaths.h"
 #include "Common/FileUtil.h"
+#include "Common/Logging/Log.h"
 
 #include "Core/AchievementManager.h"
 #include "Core/Config/AchievementSettings.h"
@@ -189,7 +189,6 @@ bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings, std::str
   const auto check = [&](const auto& info, const char* name) {
     if (ok && candidate.Exists(info.GetLocation()) && candidate.Get(info) != Config::Get(info))
     {
-      std::fprintf(stderr, "Persistent NetPlay config mismatch: %s\n", name);
       ok = false;
       if (mismatch)
       {
@@ -216,13 +215,10 @@ bool ValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings, std::str
   const bool active_hardcore = AchievementManager::GetInstance().IsHardcoreModeActive();
   if (ok && settings.enable_hardcore != active_hardcore)
   {
-    std::fprintf(stderr, "Persistent NetPlay config mismatch: effective hardcore host=%d running=%d\n",
+    WARN_LOG_FMT(NETPLAY, "Persistent NetPlay config mismatch: hardcore host={} running={}",
                  settings.enable_hardcore, active_hardcore);
     ok = false;
   }
-  std::fprintf(stderr, "PHASE93 hardcore: preference=%d effective=%d negotiated=%d\n",
-               Config::Get(Config::RA_HARDCORE_ENABLED), active_hardcore,
-               settings.enable_hardcore);
 #endif
   check(Config::MAIN_GC_LANGUAGE, "Config::MAIN_GC_LANGUAGE");
   check(Config::MAIN_OVERRIDE_REGION_SETTINGS, "Config::MAIN_OVERRIDE_REGION_SETTINGS");
@@ -376,10 +372,5 @@ std::string RunningNetPlayConfigIdentity()
   check(Config::GFX_SHADER_COMPILATION_MODE, "ShaderCompilationMode");
   check(Config::GFX_WAIT_FOR_SHADERS_BEFORE_STARTING, "WaitForShaders");
   return result;
-}
-
-bool ResearchValidateRunningNetPlayConfig(const NetPlay::NetSettings& settings)
-{
-  return ValidateRunningNetPlayConfig(settings);
 }
 }  // namespace ConfigLoaders

@@ -104,9 +104,6 @@ bool LoadForPersistentSession(Core::System& system, const std::string& filename)
 // without status messages or moving an existing file to the undo backup.
 bool SaveForPersistentSession(Core::System& system, const std::string& filename);
 
-// Temporary Phase 9.1 opt-in raw export; call only on the paused CPU thread.
-bool ResearchExport(Core::System& system, const std::string& name);
-
 void LoadLastSaved(Core::System& system, int i = 1);
 void SaveFirstSaved(Core::System& system);
 void UndoSaveState(Core::System& system);
