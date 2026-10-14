@@ -11,6 +11,14 @@ namespace Common
 {
 #define EMULATOR_NAME "Project+ Dolphin"
 
+// MSBuild's make_scmrev.h.js doesn't define these; CMake can override them.
+#ifndef PPLUS_COMPAT_REV
+#define PPLUS_COMPAT_REV "448d1dbee83429f6a64f269a3511dc9a5fb11a98"
+#endif
+#ifndef PPLUS_COMPAT_DESC
+#define PPLUS_COMPAT_DESC "v3.2.0"
+#endif
+
 #ifdef _DEBUG
 #define BUILD_TYPE_STR "Debug "
 #elif defined DEBUGFAST
@@ -47,6 +55,18 @@ const std::string& GetScmDescStr()
 {
   static const std::string scm_desc_str = SCM_DESC_STR;
   return scm_desc_str;
+}
+
+const std::string& GetNetPlayCompatRevStr()
+{
+  static const std::string compat_rev_str = PPLUS_COMPAT_REV;
+  return compat_rev_str;
+}
+
+const std::string& GetNetPlayCompatDescStr()
+{
+  static const std::string compat_desc_str = PPLUS_COMPAT_DESC;
+  return compat_desc_str;
 }
 
 const std::string& GetScmBranchStr()

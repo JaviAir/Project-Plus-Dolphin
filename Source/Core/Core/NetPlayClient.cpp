@@ -267,7 +267,7 @@ bool NetPlayClient::Connect()
 
   // send connect message
   sf::Packet packet;
-  packet << Common::GetScmRevGitStr() + "-persistent1";
+  packet << GetNetPlayVersion(m_persistent_session);
   packet << Common::GetNetplayDolphinVer();
   packet << m_player_name;
   Send(packet);
@@ -1019,7 +1019,8 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     packet >> m_net_settings.divide_by_zero_exceptions;
     packet >> m_net_settings.fprf;
     packet >> m_net_settings.accurate_nans;
-    packet >> m_net_settings.accurate_fmadds;
+    if (m_persistent_session)
+      packet >> m_net_settings.accurate_fmadds;
     packet >> m_net_settings.disable_icache;
     packet >> m_net_settings.sync_on_skip_idle;
     packet >> m_net_settings.sync_gpu;
@@ -1067,7 +1068,8 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     packet >> m_net_settings.golf_mode;
     packet >> m_net_settings.use_fma;
     packet >> m_net_settings.hide_remote_gbas;
-    packet >> m_net_settings.persistent_session;
+    if (m_persistent_session)
+      packet >> m_net_settings.persistent_session;
 
     for (size_t i = 0; i < sizeof(m_net_settings.sram); ++i)
       packet >> m_net_settings.sram[i];
@@ -1075,7 +1077,7 @@ void NetPlayClient::OnStartGame(sf::Packet& packet)
     m_net_settings.is_hosting = m_local_player->IsHost();
   }
 
-  if (!packet || m_net_settings.persistent_session != m_persistent_session)
+  if (m_persistent_session && (!packet || !m_net_settings.persistent_session))
   {
     ERROR_LOG_FMT(NETPLAY, "Persistent QuickPlay: incompatible session ownership");
     RequestStopGame();
@@ -3016,6 +3018,14 @@ std::string GetPlayerMappingString(PlayerId pid, const PadMappingArray& pad_map,
   }
   std::string res = fmt::format("{}", fmt::join(groups, "|"));
   return res.empty() ? "None" : res;
+}
+
+std::string GetNetPlayVersion(bool persistent_session)
+{
+  // Part 2 test hook (throwaway branch only): stage persistent handshakes from desktop NetPlay.
+  if (persistent_session || std::getenv("PPLUS_PART2_PERSISTENT_HANDSHAKE"))
+    return Common::GetScmRevGitStr() + "-persistent1";
+  return Common::GetNetPlayCompatRevStr();
 }
 
 bool IsNetPlayRunning()
