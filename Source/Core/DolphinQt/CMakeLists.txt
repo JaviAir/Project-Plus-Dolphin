@@ -759,14 +759,6 @@ endif()
 
 if(QUICKPLAY_NO_BULK_SCAN_TRIAL)
   target_compile_definitions(project-plus-dolphin PRIVATE QUICKPLAY_NO_BULK_SCAN_TRIAL)
-  # Launcher provenance comes from a successful manual link, not an agent report.
-  file(GENERATE OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/qp-trial-policy.txt"
-    CONTENT "quickplay-declared-bundle-trial-v1\n")
-  add_custom_command(TARGET project-plus-dolphin POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy
-      "${CMAKE_CURRENT_BINARY_DIR}/qp-trial-policy.txt"
-      "$<TARGET_FILE_DIR:project-plus-dolphin>/qp-trial-policy.txt"
-  )
 endif()
 
 if(ENABLE_TESTS)
