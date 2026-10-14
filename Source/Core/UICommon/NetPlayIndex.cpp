@@ -170,8 +170,10 @@ bool NetPlayIndex::Add(const NetPlaySession& session)
           "&game=" + request.EscapeComponent(session.game_id) +
           "&password=" + std::to_string(session.has_password) + "&method=" + session.method +
           "&server_id=" + session.server_id + "&in_game=" + std::to_string(session.in_game) +
-          "&port=" + std::to_string(session.port) + "&player_count=" +
-          std::to_string(session.player_count) + "&version=" + Common::GetScmDescStr(),
+          "&port=" + std::to_string(session.port) +
+          "&player_count=" + std::to_string(session.player_count) + "&version=" +
+          request.EscapeComponent(session.version.empty() ? Common::GetNetPlayCompatDescStr() :
+                                                            session.version),
       {{"X-Is-Dolphin", "1"}}, Common::HttpRequest::AllowedReturnCodes::All);
 
   if (!response.has_value())

@@ -29,9 +29,8 @@ local [netplay-index](https://github.com/dolphin-emu/netplay-index)
 (`uv run netplay-index`, `GEOIP_DATABASE_PATH=testdata/GeoLite2-Country.mmdb`) and
 `-C Dolphin.NetPlay.IndexServer=http://127.0.0.1:8000`.
 
-If the index cannot be reached and a coordinator other than
-the built-in `http://127.0.0.1:3000` placeholder is set, the search continues
-through that coordinator. Otherwise it fails with an error.
+If the index cannot be reached and a coordinator URL is set (there is no
+default), the search continues through that coordinator. Otherwise it fails with an error.
 
 ### Lobby handshake
 
@@ -112,7 +111,8 @@ Settings use `Main.NetPlay.QuickPlayMatchmaking` (`lobby` or `coordinator`),
 `Main.NetPlay.QuickPlayCoordinator`, `Main.NetPlay.QuickPlayRegions`
 (comma-separated tokens) and `Main.NetPlay.QuickPlayHostPreference` (`host`,
 `none` or `join`) from `Core/Config/NetplaySettings.cpp`. Defaults are `lobby`,
-`http://127.0.0.1:3000`, `us-east` and `none`. The coordinator field, its
+an empty coordinator URL, `us-east` and `none`. Custom coordinator with an empty URL fails before
+any request. The coordinator field, its
 **Show** button and **Test Connection** are enabled only for Custom coordinator;
 with the lobby, an invalid coordinator entry is left unsaved. While `QuickPlayRegions` is empty,
 the legacy single `QuickPlayRegion` value is read instead; Save writes

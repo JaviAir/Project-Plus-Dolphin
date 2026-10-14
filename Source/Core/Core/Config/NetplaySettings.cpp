@@ -14,7 +14,7 @@ static constexpr u16 DEFAULT_LISTEN_PORT = 2626;
 const Info<std::string> NETPLAY_QUICKPLAY_MATCHMAKING{
     {System::Main, "NetPlay", "QuickPlayMatchmaking"}, "lobby"};
 const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR{
-    {System::Main, "NetPlay", "QuickPlayCoordinator"}, "http://127.0.0.1:3000"};
+    {System::Main, "NetPlay", "QuickPlayCoordinator"}, ""};
 const Info<std::string> NETPLAY_QUICKPLAY_REGIONS{{System::Main, "NetPlay", "QuickPlayRegions"},
                                                   ""};
 const Info<std::string> NETPLAY_QUICKPLAY_REGION{

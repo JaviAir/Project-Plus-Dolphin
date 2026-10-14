@@ -44,6 +44,7 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   form->addRow(tr("Matchmaking:"), m_matchmaking);
   m_coordinator = new QLineEdit;
   m_coordinator->setObjectName(QStringLiteral("quickplay_coordinator"));
+  m_coordinator->setPlaceholderText(QStringLiteral("https://your-coordinator.example"));
   // Hidden by default: a private coordinator URL is effectively an access secret.
   m_coordinator->setEchoMode(QLineEdit::Password);
   m_show_coordinator = new QPushButton(tr("Show"));
@@ -188,7 +189,9 @@ void QuickPlaySettingsDialog::Save()
   // The lobby ignores the coordinator field; an unusable entry there is left unsaved.
   if (!error.isEmpty() && matchmaking == "coordinator")
   {
-    m_result->setText(error);
+    m_result->setText(m_coordinator->text().trimmed().isEmpty() ?
+                          tr("Custom coordinator needs a coordinator URL.") :
+                          error);
     m_coordinator->setFocus();
     return;
   }

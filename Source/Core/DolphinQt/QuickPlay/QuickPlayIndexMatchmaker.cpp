@@ -38,6 +38,8 @@ constexpr std::string_view NAME_PREFIX = "P+ Quick Play \xc2\xb7 PPQP1 ";
 constexpr std::string_view NAME_FILTER = "PPQP1";
 constexpr std::string_view GAME = "Project+";
 constexpr int PORT = 2626;
+// Not the compat version: official browsers grey Quick Play listings out.
+constexpr std::string_view VERSION_SUFFIX = "+ppqp1";
 
 // Same lifetime as the coordinator's queue ticket.
 constexpr auto SEARCH_TIMEOUT = 180s;
@@ -68,6 +70,11 @@ struct Listing
   char host = 0;
   std::string server_id;
 };
+
+std::string ListingVersion()
+{
+  return Common::GetNetPlayCompatDescStr() + std::string(VERSION_SUFFIX);
+}
 
 bool IsHex(std::string_view value, std::size_t size)
 {
@@ -300,9 +307,8 @@ private:
 
 bool QuickPlayIndexMatchmaker::Attempt::List(std::vector<Listing>* listings)
 {
-  const auto sessions = index.List({{"name", std::string(NAME_FILTER)},
-                                    {"password", "1"},
-                                    {"version", Common::GetScmDescStr()}});
+  const auto sessions = index.List(
+      {{"name", std::string(NAME_FILTER)}, {"password", "1"}, {"version", ListingVersion()}});
   if (!sessions)
   {
     ++failures;
@@ -342,6 +348,7 @@ std::string QuickPlayIndexMatchmaker::Attempt::ListAs(const std::string& tokens,
   session.in_game = handshake;
   session.player_count = handshake ? 2 : 1;
   session.port = PORT;
+  session.version = ListingVersion();
   listing_lost.store(false);
   if (!index.Add(session))
     return index.GetLastError().empty() ? std::string("NO_RESPONSE") : index.GetLastError();

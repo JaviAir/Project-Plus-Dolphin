@@ -513,7 +513,7 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
   std::string netplay_version;
   received_packet >> netplay_version;
-  if (netplay_version != Common::GetScmRevGitStr() + "-persistent1")
+  if (netplay_version != GetNetPlayVersion(m_persistent_session))
     return ConnectionError::VersionMismatch;
 
   if (m_is_running || m_start_pending)
@@ -1930,7 +1930,9 @@ bool NetPlayServer::StartGame()
   spac << m_settings.divide_by_zero_exceptions;
   spac << m_settings.fprf;
   spac << m_settings.accurate_nans;
-  spac << m_settings.accurate_fmadds;
+  // Official builds never send these two; ordinary sessions keep their packet layout.
+  if (m_persistent_session)
+    spac << m_settings.accurate_fmadds;
   spac << m_settings.disable_icache;
   spac << m_settings.sync_on_skip_idle;
   spac << m_settings.sync_gpu;
@@ -1971,7 +1973,8 @@ bool NetPlayServer::StartGame()
   spac << m_settings.golf_mode;
   spac << m_settings.use_fma;
   spac << m_settings.hide_remote_gbas;
-  spac << m_settings.persistent_session;
+  if (m_persistent_session)
+    spac << m_settings.persistent_session;
 
   for (size_t i = 0; i < sizeof(m_settings.sram); ++i)
     spac << m_settings.sram[i];

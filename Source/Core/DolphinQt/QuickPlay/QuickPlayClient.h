@@ -23,7 +23,7 @@ public:
   // Uses the configured coordinator URL.
   void Start(const QStringList& regions, const QString& host_preference,
              Callback callback) override;
-  // A coordinator URL other than the built-in placeholder is set, so it can take a search.
+  // A valid coordinator URL is set (there is no default), so it can take a search.
   static bool HasConfiguredCoordinator();
   // Shared by settings and admission. Returns a user-facing error, or an empty string.
   static QString NormalizeCoordinatorUrl(const QString& input, QString* normalized);

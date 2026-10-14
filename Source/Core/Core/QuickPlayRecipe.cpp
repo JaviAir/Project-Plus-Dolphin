@@ -575,6 +575,9 @@ bool ActivateForBoot(const std::string& game_id)
 
 void Deactivate()
 {
+  // A stop during preparation would otherwise leave the hook armed for the next boot.
+  Core::System::GetInstance().GetPowerPC().GetBreakPoints().ClearCaptureHook();
+  s.css_bound = false;
   s.conceal = false;
   s.local_ready = false;
   s.active = false;

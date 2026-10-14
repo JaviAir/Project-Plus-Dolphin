@@ -38,8 +38,8 @@ Settings must send no HTTP request and create no matchmaking/NetPlay state. Choo
 **Matchmaking: Custom coordinator**, edit coordinator, regions and host preference,
 Save, then click the main Quick Play area. The next attempt
 uses current config without restarting; a running attempt retains its snapshot.
-Defaults are `http://127.0.0.1:3000`, United States — East (`us-east`) and
-No preference. A profile without `QuickPlayRegions` uses its old `QuickPlayRegion`.
+Defaults are no coordinator URL, United States — East (`us-east`) and
+No preference; a local coordinator needs `http://127.0.0.1:3000` set explicitly. A profile without `QuickPlayRegions` uses its old `QuickPlayRegion`.
 For scripted runs, override with `-C Dolphin.NetPlay.QuickPlayRegions=us-east,europe`
 and `-C Dolphin.NetPlay.QuickPlayHostPreference=host`.
 Loopback reaches only your computer. See [all 11 labels/values](README.md#configuration).
@@ -56,8 +56,9 @@ clients; no server aliases or matching changes are introduced.
 
 Unknown valid custom values appear as **Custom (preserved)** and survive Save
 exactly while ticked. Invalid values are dropped. At least one region is required.
-Both players need the same endpoint, at least one shared region, protocol 2,
-and committed build revision, plus compatible Project+ game data. Platform does
+Both players need the same endpoint, at least one shared region, protocol 3,
+the same NetPlay compatibility revision and the same session kind (`ordinary` from the
+desktop, `seamless/1:<origin digest>` in-game), plus compatible Project+ game data. Platform does
 not split Windows/Linux queues.
 
 URLs may include a port/path prefix, but not credentials, queries or fragments.
@@ -88,10 +89,10 @@ machine, add `--bind_address=0.0.0.0` and use that machine's address.
   traversal host").
 - All local instances share one IP, so the index's 5-sessions-per-IP cap applies
   to them together.
-- Profiles that only have the built-in coordinator URL (`http://127.0.0.1:3000`)
-  and no `QuickPlayMatchmaking` key now search the lobby. Use
-  `-C Dolphin.NetPlay.QuickPlayMatchmaking=coordinator`, or choose Custom
-  coordinator in Settings, for coordinator runs.
+- Profiles without a `QuickPlayMatchmaking` key search the lobby. For coordinator
+  runs use `-C Dolphin.NetPlay.QuickPlayMatchmaking=coordinator` and
+  `-C Dolphin.NetPlay.QuickPlayCoordinator=http://127.0.0.1:3000`, or set both in
+  Settings.
 
 ## Phase 7 settings acceptance
 

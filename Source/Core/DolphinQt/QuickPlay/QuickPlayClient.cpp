@@ -21,13 +21,14 @@
 #include "Common/TraversalProto.h"
 #include "Common/Version.h"
 #include "Core/Config/NetplaySettings.h"
+#include "Core/QuickPlayRecipe.h"
 
 namespace
 {
 using Codes = Common::HttpRequest::AllowedReturnCodes;
 constexpr auto REQUEST_TIMEOUT = std::chrono::milliseconds{5000};
 constexpr auto CANCEL_TIMEOUT = std::chrono::milliseconds{3000};
-constexpr int QUICKPLAY_PROTOCOL = 2;
+constexpr int QUICKPLAY_PROTOCOL = 3;
 
 bool IsField(const QString& value, qsizetype limit)
 {
@@ -155,10 +156,11 @@ QuickPlayClient::Result QuickPlayClient::ParseResponse(int status, const QByteAr
 
 bool QuickPlayClient::HasConfiguredCoordinator()
 {
-  const auto url = Config::GetAsString(Config::NETPLAY_QUICKPLAY_COORDINATOR.GetLocation());
   QString normalized;
-  return url && *url != Config::NETPLAY_QUICKPLAY_COORDINATOR.GetDefaultValue() &&
-         NormalizeCoordinatorUrl(QString::fromStdString(*url), &normalized).isEmpty();
+  return NormalizeCoordinatorUrl(
+             QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_COORDINATOR)),
+             &normalized)
+      .isEmpty();
 }
 
 QString QuickPlayClient::NormalizeCoordinatorUrl(const QString& input, QString* normalized)
@@ -292,10 +294,20 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
   m_pending = true;
 
   QString normalized_url;
-  const QString url_error = NormalizeCoordinatorUrl(base_url, &normalized_url);
-  const QString build = QString::fromStdString(Common::GetScmRevGitStr() + "-persistent1");
+  const QString url_error =
+      base_url.trimmed().isEmpty() ?
+          tr("Custom coordinator is selected, but no coordinator URL is set. Enter one in Quick "
+             "Play Settings, or choose the Dolphin lobby.") :
+          NormalizeCoordinatorUrl(base_url, &normalized_url);
+  const QString build = QString::fromStdString(Common::GetNetPlayCompatRevStr());
+  // Matched exactly: a search with an origin keeps its running game, so only an equal origin can
+  // join it. Without one (desktop), the handoff is ordinary NetPlay.
+  const auto digest = QuickPlayRecipe::GetOrigin().digest;
+  const QString session =
+      QString::fromStdString(digest.empty() ? std::string("ordinary") : "seamless/1:" + digest);
   const QString version = QString::fromStdString(Common::GetScmDescStr());
-  if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(version, 64))
+  if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(session, 128) ||
+      !IsField(version, 64))
   {
     Deliver(attempt, {State::Error,
                       !url_error.isEmpty() ?
@@ -312,6 +324,7 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
   const QJsonObject fields{
       {QStringLiteral("protocol"), QUICKPLAY_PROTOCOL},
       {QStringLiteral("build"), build},
+      {QStringLiteral("session"), session},
       {QStringLiteral("pplus_version"), version},
       {QStringLiteral("regions"), QJsonArray::fromStringList(regions)},
       {QStringLiteral("host_preference"), host_preference},

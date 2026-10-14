@@ -61,7 +61,11 @@ Built on Dolphin 2606a. %CHECK_FOR_UPDATES%: <a href='https://projectplusgame.co
                    // i18n: "Branch" means the version control term, not a literal tree branch.
                    tr("Branch: %1").arg(branch_str))
           .replace(QStringLiteral("%REVISION%"),
-                   tr("Revision: %1").arg(QString::fromUtf8(Common::GetScmRevGitStr().c_str())))
+                   tr("Revision: %1").arg(QString::fromUtf8(Common::GetScmRevGitStr().c_str())) +
+                       QStringLiteral("<br>") +
+                       tr("NetPlay compatibility: %1 (%2)")
+                           .arg(QString::fromStdString(Common::GetNetPlayCompatRevStr()),
+                                QString::fromStdString(Common::GetNetPlayCompatDescStr())))
           .replace(QStringLiteral("%QT_VERSION%"),
                    tr("Using Qt %1").arg(QStringLiteral(QT_VERSION_STR)))
           .replace(QStringLiteral("%CHECK_FOR_UPDATES%"), tr("Check for updates"))

@@ -16,5 +16,8 @@ const std::string& GetUserAgentStr();
 const std::string& GetScmDistributorStr();
 const std::string& GetScmUpdateTrackStr();
 const std::string& GetNetplayDolphinVer();
+// The official release that ordinary NetPlay sessions present themselves as.
+const std::string& GetNetPlayCompatRevStr();
+const std::string& GetNetPlayCompatDescStr();
 int GetScmCommitsAheadMaster();
 }  // namespace Common
