@@ -302,7 +302,7 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
   const QString build = QString::fromStdString(Common::GetNetPlayCompatRevStr());
   // Matched exactly: a search with an origin keeps its running game, so only an equal origin can
   // join it. Without one (desktop), the handoff is ordinary NetPlay.
-  const auto digest = QuickPlayRecipe::GetOrigin().digest;
+  const auto digest = QuickPlayRecipe::IsReady() ? QuickPlayRecipe::GetOrigin().digest : "";
   const QString session =
       QString::fromStdString(digest.empty() ? std::string("ordinary") : "seamless/1:" + digest);
   const QString version = QString::fromStdString(Common::GetScmDescStr());

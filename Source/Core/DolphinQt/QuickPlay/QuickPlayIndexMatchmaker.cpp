@@ -800,8 +800,9 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   attempt->preference = normalized == QStringLiteral("host") ? 'h' :
                         normalized == QStringLiteral("join") ? 'j' :
                                                                'n';
-  // Without an origin (desktop Quick Play), only other desktop searchers are compatible.
-  const auto digest = QuickPlayRecipe::GetOrigin().digest;
+  // Without a ready recipe (desktop Quick Play), only other desktop searchers are compatible.
+  // The origin outlives a stopped game, so it alone doesn't mean a seamless search.
+  const auto digest = QuickPlayRecipe::IsReady() ? QuickPlayRecipe::GetOrigin().digest : "";
   attempt->digest8 = IsHex(digest.substr(0, 8), 8) ? digest.substr(0, 8) : "00000000";
   // Not secret: the derivation is open source. It keeps ordinary browsers out of the room and
   // checks the digest once more before the join.
