@@ -23,7 +23,6 @@
 #include "DolphinQt/MenuBar.h"
 #include "DolphinQt/NetPlay/NetPlayDialog.h"
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
-#include "DolphinQt/QuickPlay/QuickPlayClient.h"
 #include "DolphinQt/QuickPlay/QuickPlayController.h"
 #include "DolphinQt/QuickPlay/QuickPlayDialog.h"
 #include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
@@ -768,7 +767,7 @@ bool QuickPlaySession::JoinQuickPlayHost(const QString& host_code)
   if (!m_quickplay_setup || !m_quickplay_controller ||
       !m_quickplay_controller->OwnsAttempt(m_quickplay_setup->attempt) ||
       m_quickplay_setup->attempt != m_quickplay_owned_attempt || m_quickplay_joining ||
-      m_quickplay_host_attempt || !QuickPlayClient::IsValidHostCode(host_code) ||
+      m_quickplay_host_attempt || !QuickPlayMatchmaker::IsValidHostCode(host_code) ||
       (!Core::IsUninitialized(m_system) && !m_seamless->IsPersistentQuickPlayBoundary()) ||
       Settings::Instance().GetNetPlayServer() || Settings::Instance().GetNetPlayClient() ||
       m_netplay_dialog->HasRoom())

@@ -311,6 +311,7 @@ add_executable(project-plus-dolphin
   QuickPlay/QuickPlayIndexMatchmaker.h
   QuickPlay/QuickPlayLauncher.cpp
   QuickPlay/QuickPlayLauncher.h
+  QuickPlay/QuickPlayMatchmaker.cpp
   QuickPlay/QuickPlayMatchmaker.h
   QuickPlay/QuickPlaySession.cpp
   QuickPlay/QuickPlaySession.h

@@ -42,10 +42,10 @@ bool QuickPlayController::Start()
   ++m_attempt;
   m_entered_queue = false;
   m_error_message.clear();
-  m_regions = QuickPlayClient::LoadRegions();
+  m_regions = QuickPlayMatchmaker::LoadRegions();
   m_match_region.clear();
   // Loaded before SetState: the searching dialog reads it on the state change.
-  m_host_preference = QuickPlayClient::LoadHostPreference();
+  m_host_preference = QuickPlayMatchmaker::LoadHostPreference();
   SetState(State::Searching);
   StartBackend(Config::Get(Config::NETPLAY_QUICKPLAY_MATCHMAKING) == "coordinator" ?
                    Backend::Coordinator :
@@ -84,7 +84,6 @@ std::uint64_t QuickPlayController::GetGuestCancelAttempt() const
   case State::MatchedHost:
   case State::MatchedClient:
   case State::PreparingHandoff:
-  case State::WaitingForCoreStop:
   case State::WaitingForHandoff:
   case State::ValidatingMatch:
   case State::CreatingHost:
@@ -167,7 +166,7 @@ void QuickPlayController::HandleResult(QuickPlayMatchmaker::Result result)
   case QuickPlayMatchmaker::State::HostReady:
     if (m_state != State::WaitingForHost || result.match_id != m_match_id)
       return;
-    if (!QuickPlayClient::IsValidHostCode(result.host_code))
+    if (!QuickPlayMatchmaker::IsValidHostCode(result.host_code))
     {
       Fail(tr("Invalid Quick Play traversal host code."));
       return;

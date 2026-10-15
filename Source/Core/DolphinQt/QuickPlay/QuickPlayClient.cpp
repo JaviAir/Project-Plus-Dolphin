@@ -18,7 +18,6 @@
 #include "Common/Config/Config.h"
 #include "Common/HttpRequest.h"
 #include "Common/Logging/Log.h"
-#include "Common/TraversalProto.h"
 #include "Common/Version.h"
 #include "Core/Config/NetplaySettings.h"
 
@@ -28,13 +27,6 @@ using Codes = Common::HttpRequest::AllowedReturnCodes;
 constexpr auto REQUEST_TIMEOUT = std::chrono::milliseconds{5000};
 constexpr auto CANCEL_TIMEOUT = std::chrono::milliseconds{3000};
 constexpr int QUICKPLAY_PROTOCOL = 3;
-
-bool IsField(const QString& value, qsizetype limit)
-{
-  return !value.isEmpty() && value.size() <= limit &&
-         std::all_of(value.begin(), value.end(),
-                     [](QChar c) { return c.unicode() >= 0x21 && c.unicode() <= 0x7e; });
-}
 
 bool IsId(const QString& value)
 {
@@ -59,11 +51,9 @@ QString Platform()
 
 QuickPlayClient::Result TransportError()
 {
-  return {QuickPlayClient::State::Error,
-          QObject::tr("Cannot reach the Quick Play coordinator, or the request timed out. "
-                      "Check the server address and connection, then cancel and try again."),
-          {},
-          {}};
+  return QuickPlayClient::Failure(
+      QObject::tr("Cannot reach the Quick Play coordinator, or the request timed out. "
+                  "Check the server address and connection, then cancel and try again."));
 }
 }  // namespace
 
@@ -182,101 +172,6 @@ QString QuickPlayClient::NormalizeCoordinatorUrl(const QString& input, QString* 
   return {};
 }
 
-std::array<QuickPlayClient::Region, 11> QuickPlayClient::GetRegions()
-{
-  return {{
-      {QStringLiteral("us-east"), tr("United States — East")},
-      {QStringLiteral("us-south"), tr("United States — South")},
-      {QStringLiteral("us-midwest"), tr("United States — Midwest")},
-      {QStringLiteral("us-west"), tr("United States — West")},
-      {QStringLiteral("canada"), tr("Canada")},
-      {QStringLiteral("mexico-central-america"), tr("Mexico / Central America")},
-      {QStringLiteral("caribbean"), tr("Caribbean")},
-      {QStringLiteral("south-america"), tr("South America")},
-      {QStringLiteral("europe"), tr("Europe")},
-      {QStringLiteral("asia"), tr("Asia")},
-      {QStringLiteral("australia"), tr("Australia")},
-  }};
-}
-
-QString QuickPlayClient::GetRegionLabel(const QString& region)
-{
-  for (const auto& choice : GetRegions())
-  {
-    if (region == choice.value)
-      return choice.label;
-  }
-  return region;
-}
-
-QString QuickPlayClient::NormalizeRegion(const QString& region)
-{
-  const QString normalized = region.trimmed().toLower();
-  if (normalized == QStringLiteral("na-east"))
-    return QStringLiteral("us-east");
-  if (normalized == QStringLiteral("na-central"))
-    return QStringLiteral("us-midwest");
-  if (normalized == QStringLiteral("na-west"))
-    return QStringLiteral("us-west");
-  if (normalized == QStringLiteral("eu"))
-    return QStringLiteral("europe");
-  // Retired: tick the individual US regions instead. Invalid, so dropped from saved lists.
-  if (normalized == QStringLiteral("us-nationwide"))
-    return {};
-
-  for (const auto& region_choice : GetRegions())
-  {
-    if (normalized == region_choice.value)
-      return region_choice.value;
-  }
-  // Exact matching makes even case changes significant for unknown custom regions.
-  return region;
-}
-
-bool QuickPlayClient::IsValidRegion(const QString& region)
-{
-  return IsField(region, 32);
-}
-
-QStringList QuickPlayClient::ParseRegions(const QString& comma_separated)
-{
-  QStringList regions;
-  for (const auto& token : comma_separated.split(QLatin1Char(',')))
-  {
-    const QString region = NormalizeRegion(token.trimmed());
-    if (regions.size() < MAX_REGIONS && IsValidRegion(region) && !regions.contains(region))
-      regions.append(region);
-  }
-  return regions;
-}
-
-QStringList QuickPlayClient::LoadRegions()
-{
-  const auto saved =
-      ParseRegions(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGIONS)));
-  if (!saved.isEmpty())
-    return saved;
-  const auto legacy =
-      ParseRegions(QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_REGION)));
-  if (!legacy.isEmpty())
-    return legacy;
-  return ParseRegions(QString::fromStdString(Config::NETPLAY_QUICKPLAY_REGION.GetDefaultValue()));
-}
-
-QString QuickPlayClient::NormalizeHostPreference(const QString& preference)
-{
-  const QString normalized = preference.trimmed().toLower();
-  if (normalized == QStringLiteral("host") || normalized == QStringLiteral("join"))
-    return normalized;
-  return QStringLiteral("none");
-}
-
-QString QuickPlayClient::LoadHostPreference()
-{
-  return NormalizeHostPreference(
-      QString::fromStdString(Config::Get(Config::NETPLAY_QUICKPLAY_HOST_PREFERENCE)));
-}
-
 void QuickPlayClient::Start(const QStringList& regions, const QString& host_preference_input,
                             const std::string& origin_digest, Callback callback)
 {
@@ -307,13 +202,10 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
   if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(session, 128) ||
       !IsField(version, 64))
   {
-    Deliver(attempt, {State::Error,
-                      !url_error.isEmpty() ?
-                          url_error :
-                          tr("Invalid Quick Play region or build metadata. Check Quick Play "
-                             "Settings and use a compatible Dolphin build."),
-                      {},
-                      {}});
+    Deliver(attempt, Failure(!url_error.isEmpty() ?
+                                 url_error :
+                                 tr("Invalid Quick Play region or build metadata. Check Quick "
+                                    "Play Settings and use a compatible Dolphin build.")));
     return;
   }
   attempt->base_url =
@@ -383,15 +275,6 @@ void QuickPlayClient::Poll()
   });
 }
 
-bool QuickPlayClient::IsValidHostCode(const QString& code)
-{
-  return !code.isEmpty() && code.size() <= static_cast<qsizetype>(Common::NETPLAY_CODE_SIZE) &&
-         std::all_of(code.begin(), code.end(), [](QChar c) {
-           const auto u = c.unicode();
-           return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9');
-         });
-}
-
 QuickPlayClient::Result QuickPlayClient::ParseMatchResponse(int status, const QByteArray& body)
 {
   if (status == 410)
@@ -431,7 +314,7 @@ void QuickPlayClient::PollMatch(const QString& match_id)
   m_pending = true;
   if (!IsId(match_id) || m_attempt->client_match_id != match_id)
   {
-    Deliver(m_attempt, {State::Error, tr("Invalid Quick Play client match."), {}, {}});
+    Deliver(m_attempt, Failure(tr("Invalid Quick Play client match.")));
     return;
   }
   m_worker.Push([this, attempt = m_attempt, match_id] {
@@ -468,12 +351,9 @@ QuickPlayClient::Result QuickPlayClient::ParseHostResponse(int status, const QBy
       result.error = tr("The Quick Play match expired or was cancelled. Cancel and try again.");
     return result;
   }
-  return {State::Error,
-          tr("Quick Play host publication returned an invalid response (HTTP %1). "
-             "Cancel and try again.")
-              .arg(status),
-          {},
-          {}};
+  return Failure(tr("Quick Play host publication returned an invalid response (HTTP %1). "
+                    "Cancel and try again.")
+                     .arg(status));
 }
 
 void QuickPlayClient::PublishHostCode(const QString& match_id, const QString& host_code)
@@ -481,15 +361,9 @@ void QuickPlayClient::PublishHostCode(const QString& match_id, const QString& ho
   if (!m_attempt || m_pending || m_attempt->cancelled.load())
     return;
   m_pending = true;
-  const bool valid_code =
-      !host_code.isEmpty() && host_code.size() <= 64 &&
-      std::all_of(host_code.begin(), host_code.end(), [](QChar c) {
-        const auto u = c.unicode();
-        return (u >= 'A' && u <= 'Z') || (u >= 'a' && u <= 'z') || (u >= '0' && u <= '9');
-      });
-  if (!IsId(match_id) || !valid_code)
+  if (!IsId(match_id) || !IsValidHostCode(host_code))
   {
-    Deliver(m_attempt, {State::Error, tr("Invalid Quick Play traversal host code."), {}, {}});
+    Deliver(m_attempt, Failure(tr("Invalid Quick Play traversal host code.")));
     return;
   }
   m_worker.Push([this, attempt = m_attempt, match_id, host_code] {
@@ -497,7 +371,7 @@ void QuickPlayClient::PublishHostCode(const QString& match_id, const QString& ho
       return;
     if (attempt->ticket.isEmpty())
     {
-      Deliver(attempt, {State::Error, tr("Missing Quick Play host ticket."), {}, {}});
+      Deliver(attempt, Failure(tr("Missing Quick Play host ticket.")));
       return;
     }
     const auto body = QJsonDocument(QJsonObject{{QStringLiteral("ticket"), attempt->ticket},

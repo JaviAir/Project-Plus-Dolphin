@@ -3,8 +3,10 @@
 
 #pragma once
 
+#include <array>
 #include <functional>
 #include <string>
+#include <utility>
 
 #include <QObject>
 #include <QString>
@@ -59,6 +61,34 @@ public:
   using Callback = std::function<void(Result)>;
 
   using QObject::QObject;
+
+  struct Region
+  {
+    QString value;
+    QString label;
+  };
+  static std::array<Region, 11> GetRegions();
+  static QString GetRegionLabel(const QString& region);
+  static QString NormalizeRegion(const QString& region);
+  static bool IsValidRegion(const QString& region);
+  static constexpr qsizetype MAX_REGIONS = 12;
+  // Normalized, valid, distinct tokens in order, at most MAX_REGIONS.
+  static QStringList ParseRegions(const QString& comma_separated);
+  // Saved regions, else the legacy single region when none are saved yet, else the default.
+  static QStringList LoadRegions();
+  // "host", "none" or "join"; anything else is "none".
+  static QString NormalizeHostPreference(const QString& preference);
+  static QString LoadHostPreference();
+  static bool IsValidHostCode(const QString& code);
+  // Non-empty printable ASCII without spaces, at most `limit` characters.
+  static bool IsField(const QString& value, qsizetype limit);
+  static Result Failure(QString error, bool unreachable = false)
+  {
+    Result result;
+    result.error = std::move(error);
+    result.unreachable = unreachable;
+    return result;
+  }
 
   // `origin_digest` is the seamless origin to match on, empty for an ordinary search.
   virtual void Start(const QStringList& regions, const QString& host_preference,

@@ -27,7 +27,6 @@ public:
     MatchedHost,
     MatchedClient,
     PreparingHandoff,
-    WaitingForCoreStop,
     WaitingForHandoff,
     ValidatingMatch,
     CreatingHost,

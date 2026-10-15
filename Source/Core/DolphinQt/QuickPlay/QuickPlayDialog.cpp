@@ -86,13 +86,13 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
   {
     const auto& region =
         m_controller.GetMatchRegion().isEmpty() ? regions.front() : m_controller.GetMatchRegion();
-    m_region->setText(tr("Region:\n%1").arg(QuickPlayClient::GetRegionLabel(region)));
+    m_region->setText(tr("Region:\n%1").arg(QuickPlayMatchmaker::GetRegionLabel(region)));
   }
   else
   {
     QStringList labels;
     for (const auto& region : regions)
-      labels.append(QuickPlayClient::GetRegionLabel(region));
+      labels.append(QuickPlayMatchmaker::GetRegionLabel(region));
     m_region->setText(tr("Regions:\n%1").arg(labels.join(QLatin1Char('\n'))));
   }
   const auto& preference = m_controller.GetHostPreference();
@@ -119,7 +119,6 @@ void QuickPlayDialog::UpdateState(QuickPlayController::State state)
     m_status->setText(tr("Opponent found...\nMatched as client"));
     break;
   case QuickPlayController::State::PreparingHandoff:
-  case QuickPlayController::State::WaitingForCoreStop:
   case QuickPlayController::State::WaitingForHandoff:
     m_status->setText(tr("Opponent found. Preparing session..."));
     break;

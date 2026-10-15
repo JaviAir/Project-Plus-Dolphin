@@ -33,7 +33,6 @@
 #include "DolphinQt/QtUtils/ModalMessageBox.h"
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QuickPlay/PersistentSession.h"
-#include "DolphinQt/QuickPlay/QuickPlayClient.h"
 #include "DolphinQt/QuickPlay/QuickPlayLauncher.h"
 #include "DolphinQt/QuickPlay/QuickPlaySession.h"
 #include "DolphinQt/RenderWidget.h"
@@ -727,7 +726,7 @@ void SeamlessQuickPlay::PublishQuickPlayPresentation()
         // Kept short: the overlay has two lines, and the cancel hint follows the text.
         const auto stage = m_session.m_quickplay_controller->GetSearchStage();
         const QString where = regions.size() == 1 ?
-                                  QuickPlayClient::GetRegionLabel(regions.front()) :
+                                  QuickPlayMatchmaker::GetRegionLabel(regions.front()) :
                                   tr("%n regions", "", regions.size());
         if (!m_session.m_quickplay_controller->GetSearchNotice().isEmpty())
           text = m_session.m_quickplay_controller->GetSearchNotice();
@@ -746,7 +745,6 @@ void SeamlessQuickPlay::PublishQuickPlayPresentation()
       case State::MatchedHost:
       case State::MatchedClient:
       case State::PreparingHandoff:
-      case State::WaitingForCoreStop:
       case State::WaitingForHandoff:
         text = tr("Opponent found. Preparing session…");
         break;

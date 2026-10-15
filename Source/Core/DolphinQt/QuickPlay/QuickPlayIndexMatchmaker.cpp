@@ -18,13 +18,11 @@
 
 #include <fmt/format.h>
 
-
 #include "Common/Config/Config.h"
 #include "Common/Logging/Log.h"
 #include "Common/StringUtil.h"
 #include "Common/Version.h"
 #include "Core/Config/NetplaySettings.h"
-#include "DolphinQt/QuickPlay/QuickPlayClient.h"
 #include "UICommon/NetPlayIndex.h"
 
 namespace
@@ -146,7 +144,7 @@ std::optional<Listing> Parse(const NetPlaySession& session, std::string_view dig
 
 std::uint16_t RegionMask(const QStringList& regions)
 {
-  const auto choices = QuickPlayClient::GetRegions();
+  const auto choices = QuickPlayMatchmaker::GetRegions();
   std::uint16_t mask = 0;
   for (std::size_t i = 0; i < choices.size(); ++i)
   {
@@ -159,7 +157,7 @@ std::uint16_t RegionMask(const QStringList& regions)
 // The first shared region in checklist order, which is also each player's wire order.
 QString AgreedRegion(std::uint16_t mask)
 {
-  const auto choices = QuickPlayClient::GetRegions();
+  const auto choices = QuickPlayMatchmaker::GetRegions();
   for (std::size_t i = 0; i < choices.size(); ++i)
   {
     if (mask & (1u << i))
@@ -191,19 +189,12 @@ QuickPlayMatchmaker::Result Searching(QString notice = {})
   return result;
 }
 
-QuickPlayMatchmaker::Result Failed(QString error, bool unreachable = false)
-{
-  QuickPlayMatchmaker::Result result;
-  result.error = std::move(error);
-  result.unreachable = unreachable;
-  return result;
-}
-
 QuickPlayMatchmaker::Result Unreachable()
 {
-  return Failed(QObject::tr("Cannot reach the Dolphin lobby (NetPlay index), or the request "
-                            "timed out. Check the connection, then cancel and try again."),
-                true);
+  return QuickPlayMatchmaker::Failure(
+      QObject::tr("Cannot reach the Dolphin lobby (NetPlay index), or the request timed out. "
+                  "Check the connection, then cancel and try again."),
+      true);
 }
 
 // Shared public IP (CGNAT, campus): every listing, a claim too, needs one of its 5 slots.
@@ -383,9 +374,9 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::AddFailed(const s
   Unlist();
   if (status == "NO_RESPONSE" || status == "BAD_JSON")
     return Unreachable();
-  return Failed(QObject::tr("The Dolphin lobby refused the Quick Play listing (%1). "
-                            "Cancel and try again.")
-                    .arg(QString::fromStdString(status)));
+  return Failure(QObject::tr("The Dolphin lobby refused the Quick Play listing (%1). "
+                             "Cancel and try again.")
+                     .arg(QString::fromStdString(status)));
 }
 
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Step()
@@ -679,8 +670,6 @@ QuickPlayIndexMatchmaker::Attempt::FindHost(const std::vector<Listing>& listings
 
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Validate()
 {
-  if (phase != Phase::Matched)
-    return Failed(QObject::tr("Invalid Quick Play lobby match."));
   for (int attempt = 0; attempt < PEER_MISSES && !cancelled.load(); ++attempt)
   {
     if (attempt)
@@ -701,7 +690,7 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Validate()
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::PollHost(const QString& id)
 {
   if (phase != Phase::Matched || hosting || id != match_id)
-    return Failed(QObject::tr("Invalid Quick Play client match."));
+    return Failure(QObject::tr("Invalid Quick Play client match."));
   Result result;
   result.state = State::WaitingForHost;
   result.match_id = match_id;
@@ -718,9 +707,9 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::PollHost(const QS
     NetPlaySession session;
     session.server_id = host->server_id;
     const auto code = session.DecryptID(key);
-    if (!code || !QuickPlayClient::IsValidHostCode(QString::fromStdString(*code)))
-      return Failed(QObject::tr("The Quick Play host listed an unreadable room code. "
-                                "Cancel and try again."));
+    if (!code || !IsValidHostCode(QString::fromStdString(*code)))
+      return Failure(QObject::tr("The Quick Play host listed an unreadable room code. "
+                                 "Cancel and try again."));
     result.state = State::HostReady;
     result.host_code = QString::fromStdString(*code);
     return result;
@@ -742,7 +731,7 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Publish(const QSt
                                                                        const std::string& host_code)
 {
   if (phase != Phase::Matched || !hosting || id != match_id)
-    return Failed(QObject::tr("Invalid Quick Play traversal host code."));
+    return Failure(QObject::tr("Invalid Quick Play traversal host code."));
   NetPlaySession code;
   code.server_id = host_code;
   code.EncryptID(key);
@@ -752,9 +741,9 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Publish(const QSt
   {
     if (status == "NO_RESPONSE" || status == "BAD_JSON")
       return Unreachable();
-    return Failed(QObject::tr("The Dolphin lobby refused the Quick Play room (%1). "
-                              "Cancel and try again.")
-                      .arg(QString::fromStdString(status)));
+    return Failure(QObject::tr("The Dolphin lobby refused the Quick Play room (%1). "
+                               "Cancel and try again.")
+                       .arg(QString::fromStdString(status)));
   }
   phase = Phase::Published;
   Result result;
@@ -786,11 +775,11 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   attempt->mask = RegionMask(regions);
   if (!attempt->mask)
   {
-    Deliver(attempt, Failed(tr("The Dolphin lobby only knows the listed regions. Tick at least "
-                               "one of them in Quick Play Settings.")));
+    Deliver(attempt, Failure(tr("The Dolphin lobby only knows the listed regions. Tick at least "
+                                "one of them in Quick Play Settings.")));
     return;
   }
-  const auto normalized = QuickPlayClient::NormalizeHostPreference(host_preference);
+  const auto normalized = NormalizeHostPreference(host_preference);
   attempt->preference = normalized == QStringLiteral("host") ? 'h' :
                         normalized == QStringLiteral("join") ? 'j' :
                                                                'n';
@@ -835,12 +824,12 @@ void QuickPlayIndexMatchmaker::PollMatch(const QString& match_id)
 
 void QuickPlayIndexMatchmaker::PublishHostCode(const QString& match_id, const QString& host_code)
 {
-  if (!QuickPlayClient::IsValidHostCode(host_code))
+  if (!IsValidHostCode(host_code))
   {
     if (m_attempt && !m_pending)
     {
       m_pending = true;
-      Deliver(m_attempt, Failed(tr("Invalid Quick Play traversal host code.")));
+      Deliver(m_attempt, Failure(tr("Invalid Quick Play traversal host code.")));
     }
     return;
   }

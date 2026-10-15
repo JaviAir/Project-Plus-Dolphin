@@ -62,7 +62,7 @@ QuickPlaySettingsDialog::QuickPlaySettingsDialog(QWidget* parent) : QDialog(pare
   m_region_grid->setContentsMargins(0, 0, 0, 0);
   m_region_grid->setVerticalSpacing(8);
   m_region_grid->setHorizontalSpacing(16);
-  for (const auto& region : QuickPlayClient::GetRegions())
+  for (const auto& region : QuickPlayMatchmaker::GetRegions())
     AddRegion(region.value, region.label);
   m_canonical_region_count = m_regions.size();
   form->addRow(tr("Regions:"), region_list);
@@ -154,7 +154,7 @@ void QuickPlaySettingsDialog::Open()
       delete m_regions.back().first;
       m_regions.pop_back();
     }
-    const auto saved = QuickPlayClient::LoadRegions();
+    const auto saved = QuickPlayMatchmaker::LoadRegions();
     for (const auto& region : saved)
     {
       const auto it = std::find_if(m_regions.begin(), m_regions.end(),
@@ -165,7 +165,7 @@ void QuickPlaySettingsDialog::Open()
     for (const auto& [box, value] : m_regions)
       box->setChecked(saved.contains(value));
     m_host_preference->setCurrentIndex(
-        m_host_preference->findData(QuickPlayClient::LoadHostPreference()));
+        m_host_preference->findData(QuickPlayMatchmaker::LoadHostPreference()));
     m_seamless->setChecked(Config::Get(Config::NETPLAY_QUICKPLAY_SEAMLESS));
     m_result->clear();
   }
@@ -205,9 +205,9 @@ void QuickPlaySettingsDialog::Save()
     m_result->setText(tr("Choose at least one region."));
     return;
   }
-  if (regions.size() > QuickPlayClient::MAX_REGIONS)
+  if (regions.size() > QuickPlayMatchmaker::MAX_REGIONS)
   {
-    m_result->setText(tr("Choose at most %1 regions.").arg(QuickPlayClient::MAX_REGIONS));
+    m_result->setText(tr("Choose at most %1 regions.").arg(QuickPlayMatchmaker::MAX_REGIONS));
     return;
   }
   const auto joined = regions.join(QLatin1Char(',')).toStdString();

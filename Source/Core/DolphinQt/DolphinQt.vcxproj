@@ -203,6 +203,7 @@
     <ClCompile Include="QuickPlay\QuickPlayDialog.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayIndexMatchmaker.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayLauncher.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayMatchmaker.cpp" />
     <ClCompile Include="QuickPlay\QuickPlaySession.cpp" />
     <ClCompile Include="QuickPlay\QuickPlaySettingsDialog.cpp" />
     <ClCompile Include="QuickPlay\SeamlessQuickPlay.cpp" />
