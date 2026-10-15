@@ -8,6 +8,9 @@
 
 #include <QAction>
 #include <QIcon>
+#include <QPainter>
+#include <QPainterPath>
+#include <QToolButton>
 
 #include "Core/Core.h"
 #include "Core/System.h"
@@ -16,6 +19,61 @@
 #include "DolphinQt/Settings.h"
 
 static QSize ICON_SIZE(32, 32);
+
+static QIcon MakeQuickPlaySettingsIcon(const QIcon& quickplay_icon)
+{
+  // Use Quickplay's strongest solid accent so gradients do not dull the gear.
+  const QImage reference = quickplay_icon.pixmap(ICON_SIZE).toImage();
+  QColor accent = Qt::gray;
+  int strongest_accent = -1;
+  for (int y = 0; y < reference.height(); ++y)
+  {
+    for (int x = 0; x < reference.width(); ++x)
+    {
+      const QColor color = reference.pixelColor(x, y);
+      if (color.alpha() < 250)
+        continue;
+      const int strength = color.hsvSaturation() * color.value();
+      if (strength > strongest_accent)
+      {
+        strongest_accent = strength;
+        accent = color;
+        accent.setAlpha(255);
+      }
+    }
+  }
+
+  // Draw the same gear on every platform, independent of installed icon themes.
+  QPainterPath gear;
+  gear.addEllipse(QRectF(8, 10, 16, 16));
+  for (int tooth = 0; tooth < 8; ++tooth)
+  {
+    QPainterPath rectangle;
+    rectangle.addRoundedRect(QRectF(13, 6, 6, 6), 1, 1);
+    QTransform rotation;
+    rotation.translate(16, 18);
+    rotation.rotate(tooth * 45);
+    rotation.translate(-16, -18);
+    gear = gear.united(rotation.map(rectangle));
+  }
+  QPainterPath hole;
+  hole.addEllipse(QRectF(12, 14, 8, 8));
+  gear = gear.subtracted(hole);
+
+  QIcon result;
+  for (int scale : {1, 2, 3, 4})
+  {
+    QPixmap pixmap(ICON_SIZE * scale);
+    pixmap.setDevicePixelRatio(scale);
+    pixmap.fill(Qt::transparent);
+    QPainter painter(&pixmap);
+    painter.setRenderHint(QPainter::Antialiasing);
+    painter.fillPath(gear, accent);
+    painter.end();
+    result.addPixmap(pixmap);
+  }
+  return result;
+}
 
 ToolBar::ToolBar(QWidget* parent) : QToolBar(parent)
 {
@@ -124,7 +182,22 @@ void ToolBar::MakeActions()
   m_fullscreen_action = addAction(tr("FullScr"), this, &ToolBar::FullScreenPressed);
   m_screenshot_action = addAction(tr("ScrShot"), this, &ToolBar::ScreenShotPressed);
   m_netplay_setup_action = addAction(tr("Netplay"), this, &ToolBar::NetPlaySetupDialogPressed);
+  addSeparator();
+  m_quickplay_action = addAction(tr("Quickplay"), this, &ToolBar::QuickPlayPressed);
+  m_quickplay_action->setToolTip(tr("Start Quick Play"));
+  m_quickplay_settings_action =
+      addAction(tr("Quick Play Settings"), this, &ToolBar::QuickPlaySettingsPressed);
+  m_quickplay_settings_action->setToolTip(tr("Quick Play Settings"));
+  auto* settings_button = qobject_cast<QToolButton*>(widgetForAction(m_quickplay_settings_action));
+  // Reserve the same caption row as Quick Play so their icons align vertically.
+  m_quickplay_settings_action->setIconText(QStringLiteral(" "));
+  settings_button->setToolButtonStyle(Qt::ToolButtonTextUnderIcon);
+  settings_button->setAccessibleName(tr("Quick Play Settings"));
+  settings_button->setFixedWidth(36);
 
+  auto* quickplay_spacing = new QWidget(this);
+  quickplay_spacing->setFixedWidth(10);
+  addWidget(quickplay_spacing);
   addSeparator();
 
   m_config_action = addAction(tr("Config"), this, &ToolBar::SettingsPressed);
@@ -141,7 +214,7 @@ void ToolBar::MakeActions()
        {m_open_action, m_pause_play_action, m_stop_action, m_stop_action, m_fullscreen_action,
         m_screenshot_action, m_config_action, m_graphics_action, m_controllers_action,
         m_step_action, m_step_over_action, m_step_out_action, m_skip_action, m_show_pc_action,
-        m_set_pc_action, m_netplay_setup_action, m_updater_action})
+        m_set_pc_action, m_netplay_setup_action, m_quickplay_action, m_updater_action})
   {
     items.emplace_back(widgetForAction(action));
   }
@@ -173,6 +246,16 @@ void ToolBar::UpdatePausePlayButtonState(const bool playing_state)
   }
 }
 
+void ToolBar::SetQuickPlaySettingsOpen(bool open)
+{
+  m_quickplay_action->setEnabled(!open);
+}
+
+void ToolBar::SetQuickPlayActive(bool active)
+{
+  m_quickplay_settings_action->setEnabled(!active);
+}
+
 void ToolBar::UpdateIcons()
 {
   m_step_action->setIcon(Resources::GetThemeIcon("debugger_step_in"));
@@ -196,6 +279,8 @@ void ToolBar::UpdateIcons()
   m_fullscreen_action->setIcon(Resources::GetThemeIcon("fullscreen"));
   m_screenshot_action->setIcon(Resources::GetThemeIcon("screenshot"));
   m_netplay_setup_action->setIcon(Resources::GetThemeIcon("netplay"));
+  m_quickplay_action->setIcon(Resources::GetThemeIcon("netplay"));
+  m_quickplay_settings_action->setIcon(MakeQuickPlaySettingsIcon(m_quickplay_action->icon()));
   m_config_action->setIcon(Resources::GetThemeIcon("config"));
   m_controllers_action->setIcon(Resources::GetThemeIcon("gcpad"));
   m_graphics_action->setIcon(Resources::GetThemeIcon("graphics"));

@@ -199,9 +199,12 @@
     <ClCompile Include="ProjectPlus/UpdateDialog.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayClient.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayController.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlayDialog.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayIndexMatchmaker.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayLauncher.cpp" />
     <ClCompile Include="QuickPlay\QuickPlayMatchmaker.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlaySession.cpp" />
+    <ClCompile Include="QuickPlay\QuickPlaySettingsDialog.cpp" />
     <ClCompile Include="MenuBar.cpp" />
     <ClCompile Include="NetPlay\ChunkedProgressDialog.cpp" />
     <ClCompile Include="NetPlay\GameDigestDialog.cpp" />
@@ -440,6 +443,9 @@
     <QtMoc Include="ProjectPlus/InstallUpdateDialog.h" />
     <QtMoc Include="ProjectPlus/UpdateDialog.h" />
     <QtMoc Include="QuickPlay\QuickPlayController.h" />
+    <QtMoc Include="QuickPlay\QuickPlayDialog.h" />
+    <QtMoc Include="QuickPlay\QuickPlaySession.h" />
+    <QtMoc Include="QuickPlay\QuickPlaySettingsDialog.h" />
     <QtMoc Include="MenuBar.h" />
     <QtMoc Include="NetPlay\ChunkedProgressDialog.h" />
     <QtMoc Include="NetPlay\GameDigestDialog.h" />

@@ -122,6 +122,7 @@
 #include "DolphinQt/QtUtils/QueueOnObject.h"
 #include "DolphinQt/QtUtils/RunOnObject.h"
 #include "DolphinQt/QtUtils/WindowActivationEventFilter.h"
+#include "DolphinQt/QuickPlay/QuickPlaySession.h"
 #include "DolphinQt/RenderWidget.h"
 #include "DolphinQt/ResourcePackManager.h"
 #include "DolphinQt/Resources.h"
@@ -223,6 +224,26 @@ static std::vector<std::string> StringListToStdVector(const QStringList& list)
   return result;
 }
 
+// Everything of MainWindow that Quick Play can reach.
+class MainWindow::QuickPlayAdapter final : public QuickPlayWindow
+{
+public:
+  explicit QuickPlayAdapter(MainWindow& window) : m_window(window) {}
+
+  bool IsExitRequested() const override { return m_window.m_exit_requested; }
+  bool IsBootPending() const override { return m_window.m_pending_boot != nullptr; }
+
+  void NetPlayQuit() override { m_window.NetPlayQuit(); }
+  bool NetPlayHostInternal(const UICommon::GameFile& game, u64 quickplay_attempt) override
+  {
+    return m_window.NetPlayHostInternal(game, quickplay_attempt);
+  }
+  bool NetPlayJoinInternal() override { return m_window.NetPlayJoinInternal(false); }
+
+private:
+  MainWindow& m_window;
+};
+
 MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boot_parameters,
                        const std::string& movie_path)
     : QMainWindow(nullptr), m_system(system)
@@ -270,6 +291,9 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
   InitCoreCallbacks();
 
   NetPlayInit();
+  m_quickplay_window = std::make_unique<QuickPlayAdapter>(*this);
+  m_quickplay = new QuickPlaySession(*m_quickplay_window, m_system, this, m_netplay_dialog,
+                                     m_game_list->GetGameListModel(), m_tool_bar);
 
 #ifdef SHOW_UPDATER
   CheckForUpdatesAuto();
@@ -349,6 +373,8 @@ MainWindow::MainWindow(Core::System& system, std::unique_ptr<BootParameters> boo
 
 MainWindow::~MainWindow()
 {
+  m_quickplay->Shutdown();
+
   // Shut down NetPlay first to avoid race condition segfault
   Settings::Instance().ResetNetPlayClient();
   Settings::Instance().ResetNetPlayServer();
@@ -1735,6 +1761,13 @@ void MainWindow::NetPlayInit()
 
 bool MainWindow::NetPlayJoin()
 {
+  if (m_quickplay->OwnsNetPlay())
+    return false;
+  return NetPlayJoinInternal(false);
+}
+
+bool MainWindow::NetPlayJoinInternal(bool force_traversal)
+{
   if (!Core::IsUninitialized(m_system))
   {
     ModalMessageBox::critical(nullptr, tr("Error"),
@@ -1753,7 +1786,7 @@ bool MainWindow::NetPlayJoin()
 
   // Settings
   const std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
-  const bool is_traversal = traversal_choice == "traversal";
+  const bool is_traversal = force_traversal || traversal_choice == "traversal";
 
   std::string host_ip;
   u16 host_port;
@@ -1802,6 +1835,13 @@ bool MainWindow::NetPlayJoin()
 
 bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
 {
+  if (m_quickplay->OwnsNetPlay())
+    return false;
+  return NetPlayHostInternal(game, 0);
+}
+
+bool MainWindow::NetPlayHostInternal(const UICommon::GameFile& game, u64 quickplay_attempt)
+{
   if (!Core::IsUninitialized(m_system))
   {
     ModalMessageBox::critical(nullptr, tr("Error"),
@@ -1819,7 +1859,7 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
   // Settings
   u16 host_port = Config::Get(Config::NETPLAY_HOST_PORT);
   const std::string traversal_choice = Config::Get(Config::NETPLAY_TRAVERSAL_CHOICE);
-  const bool is_traversal = traversal_choice == "traversal";
+  const bool is_traversal = quickplay_attempt != 0 || traversal_choice == "traversal";
   const bool use_upnp = Config::Get(Config::NETPLAY_USE_UPNP);
 
   const std::string traversal_host = Config::Get(Config::NETPLAY_TRAVERSAL_SERVER);
@@ -1830,10 +1870,10 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
     host_port = Config::Get(Config::NETPLAY_LISTEN_PORT);
 
   // Create Server
-  Settings::Instance().ResetNetPlayServer(
-      new NetPlay::NetPlayServer(host_port, use_upnp, m_netplay_dialog,
-                                 NetPlay::NetTraversalConfig{is_traversal, traversal_host,
-                                                             traversal_port, traversal_port_alt}));
+  Settings::Instance().ResetNetPlayServer(new NetPlay::NetPlayServer(
+      host_port, use_upnp, m_netplay_dialog,
+      NetPlay::NetTraversalConfig{is_traversal, traversal_host, traversal_port, traversal_port_alt},
+      quickplay_attempt));
 
   if (!Settings::Instance().GetNetPlayServer()->is_connected)
   {
@@ -1849,13 +1889,14 @@ bool MainWindow::NetPlayHost(const UICommon::GameFile& game)
                                                       m_game_list->GetNetPlayName(game));
 
   // Join our local server
-  return NetPlayJoin();
+  return NetPlayJoinInternal(quickplay_attempt != 0);
 }
 
 void MainWindow::NetPlayQuit()
 {
   Settings::Instance().ResetNetPlayClient();
   Settings::Instance().ResetNetPlayServer();
+  m_quickplay->OnNetPlayQuit();
 #ifdef USE_DISCORD_PRESENCE
   Discord::UpdateDiscordPresence();
 #endif

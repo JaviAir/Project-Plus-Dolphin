@@ -20,6 +20,8 @@ public:
   explicit ToolBar(QWidget* parent = nullptr);
 
   void closeEvent(QCloseEvent*) override;
+  void SetQuickPlaySettingsOpen(bool open);
+  void SetQuickPlayActive(bool active);
 signals:
   void OpenPressed();
   void RefreshPressed();
@@ -29,6 +31,8 @@ signals:
   void FullScreenPressed();
   void ScreenShotPressed();
   void NetPlaySetupDialogPressed();
+  void QuickPlayPressed();
+  void QuickPlaySettingsPressed();
 
   void SettingsPressed();
   void ControllersPressed();
@@ -61,6 +65,8 @@ private:
   QAction* m_controllers_action;
   QAction* m_graphics_action;
   QAction* m_netplay_setup_action;
+  QAction* m_quickplay_action;
+  QAction* m_quickplay_settings_action;
   QAction* m_updater_action;
 
   QAction* m_step_action;

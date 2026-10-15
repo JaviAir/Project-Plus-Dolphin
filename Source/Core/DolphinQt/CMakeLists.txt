@@ -315,12 +315,18 @@ add_executable(project-plus-dolphin
   QuickPlay/QuickPlayClient.h
   QuickPlay/QuickPlayController.cpp
   QuickPlay/QuickPlayController.h
+  QuickPlay/QuickPlayDialog.cpp
+  QuickPlay/QuickPlayDialog.h
   QuickPlay/QuickPlayIndexMatchmaker.cpp
   QuickPlay/QuickPlayIndexMatchmaker.h
   QuickPlay/QuickPlayLauncher.cpp
   QuickPlay/QuickPlayLauncher.h
   QuickPlay/QuickPlayMatchmaker.cpp
   QuickPlay/QuickPlayMatchmaker.h
+  QuickPlay/QuickPlaySession.cpp
+  QuickPlay/QuickPlaySession.h
+  QuickPlay/QuickPlaySettingsDialog.cpp
+  QuickPlay/QuickPlaySettingsDialog.h
   MenuBar.cpp
   MenuBar.h
   NetPlay/ChunkedProgressDialog.cpp
