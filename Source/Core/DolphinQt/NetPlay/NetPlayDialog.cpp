@@ -736,6 +736,10 @@ void NetPlayDialog::UpdateGUI()
   if (!server)
     return;
 
+  // The host's local client has received the remote player's successful admission.
+  if (server->GetQuickPlayAttempt() != 0 && players.size() > 1)
+    emit QuickPlayOpponentConnected(server->GetQuickPlayAttempt());
+
   const bool is_local_ip_selected = m_room_box->currentIndex() > (m_use_traversal ? 1 : 0);
   if (is_local_ip_selected)
   {
@@ -1066,6 +1070,17 @@ void NetPlayDialog::OnTraversalError(Common::TraversalClient::FailureReason erro
       UpdateGUI();
       break;
     }
+  });
+}
+
+void NetPlayDialog::OnHostTraversalStateChanged(u64 attempt, Common::TraversalClient::State state,
+                                                const std::string& code)
+{
+  // Copy on the traversal callback thread, never read the global client from a queued lambda.
+  const auto copied_code = QString::fromStdString(code);
+  const bool failed = state == Common::TraversalClient::State::Failure;
+  QueueOnObject(this, [this, attempt, copied_code, failed] {
+    emit HostTraversalChanged(attempt, copied_code, failed);
   });
 }
 

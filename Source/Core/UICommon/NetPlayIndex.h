@@ -25,6 +25,8 @@ struct NetPlaySession
 
   int player_count = 0;
   int port = 0;
+  // Server time of the last keepalive, when the index reports it.
+  double timestamp = 0;
 
   bool has_password = false;
   bool in_game = false;

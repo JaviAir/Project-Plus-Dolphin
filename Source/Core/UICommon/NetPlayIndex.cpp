@@ -116,6 +116,8 @@ NetPlayIndex::List(const std::map<std::string, std::string>& filters)
     session.player_count = static_cast<int>(player_count.get<double>());
     session.port = static_cast<int>(port.get<double>());
     session.in_game = in_game.get<bool>();
+    if (const auto& timestamp = entry.get("timestamp"); timestamp.is<double>())
+      session.timestamp = timestamp.get<double>();
 
     sessions.push_back(std::move(session));
   }
@@ -176,7 +178,9 @@ bool NetPlayIndex::Add(const NetPlaySession& session)
                   fmt::arg("password", session.has_password), fmt::arg("method", session.method),
                   fmt::arg("server_id", session.server_id), fmt::arg("in_game", session.in_game),
                   fmt::arg("port", session.port), fmt::arg("player_count", session.player_count),
-                  fmt::arg("version", Common::GetScmDescStr())),
+                  fmt::arg("version", request.EscapeComponent(session.version.empty() ?
+                                                                  Common::GetScmDescStr() :
+                                                                  session.version))),
       {{"X-Is-Dolphin", "1"}}, Common::HttpRequest::AllowedReturnCodes::All);
   if (!response.has_value())
   {

@@ -118,8 +118,8 @@ NetPlayServer::~NetPlayServer()
 
 // called from ---GUI--- thread
 NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI* dialog,
-                             const NetTraversalConfig& traversal_config)
-    : m_dialog(dialog)
+                             const NetTraversalConfig& traversal_config, u64 quickplay_attempt)
+    : m_quickplay_attempt(quickplay_attempt), m_dialog(dialog)
 {
   //--use server time
   if (enet_initialize() != 0)
@@ -166,6 +166,8 @@ NetPlayServer::NetPlayServer(const u16 port, const bool forward_port, NetPlayUI*
   {
     is_connected = true;
     m_do_loop = true;
+    // Snapshot before starting the service thread: handles an already-connected shared client.
+    NotifyHostTraversalState();
     m_thread = std::thread(&NetPlayServer::ThreadFunc, this);
     m_minimum_buffer_size = 3;
     m_chunked_data_thread = std::thread(&NetPlayServer::ChunkedDataThreadFunc, this);
@@ -199,7 +201,9 @@ static bool IsValidPadIndex(const T& map_array, PadIndex index)
 
 void NetPlayServer::SetupIndex()
 {
-  if (!Config::Get(Config::NETPLAY_USE_INDEX) || Config::Get(Config::NETPLAY_INDEX_NAME).empty() ||
+  // Immutable per-server override, including every traversal reconnect. Manual config is untouched.
+  if (m_quickplay_attempt != 0 || !Config::Get(Config::NETPLAY_USE_INDEX) ||
+      Config::Get(Config::NETPLAY_INDEX_NAME).empty() ||
       Config::Get(Config::NETPLAY_INDEX_REGION).empty())
   {
     return;
@@ -434,6 +438,10 @@ static void SendSyncIdentifier(sf::Packet& spac, const SyncIdentifier& sync_iden
 // called from ---NETPLAY--- thread
 ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Packet& received_packet)
 {
+  // A Quick Play room is for one opponent, even after that opponent leaves.
+  if (m_quickplay_attempt != 0 && m_quickplay_had_peer)
+    return ConnectionError::ServerFull;
+
   std::string netplay_version;
   received_packet >> netplay_version;
   if (netplay_version != Common::GetScmRevGitStr())
@@ -462,6 +470,9 @@ ConnectionError NetPlayServer::OnConnect(ENetPeer* incoming_connection, sf::Pack
 
   // force a ping on first netplay loop
   m_update_pings = true;
+
+  if (m_quickplay_attempt != 0 && new_player.pid != 1)
+    m_quickplay_had_peer = true;
 
   AssignNewUserAPad(new_player);
 
@@ -1337,8 +1348,24 @@ unsigned int NetPlayServer::OnData(sf::Packet& packet, Client& player)
   return 0;
 }
 
+void NetPlayServer::NotifyHostTraversalState()
+{
+  if (!m_quickplay_attempt || !m_dialog || !m_traversal_client)
+    return;
+  const auto state = m_traversal_client->GetState();
+  std::string code;
+  if (state == Common::TraversalClient::State::Connected)
+  {
+    const auto id = m_traversal_client->GetHostID();
+    if (id[0] != '\0')
+      code.assign(id.begin(), id.end());
+  }
+  m_dialog->OnHostTraversalStateChanged(m_quickplay_attempt, state, code);
+}
+
 void NetPlayServer::OnTraversalStateChanged()
 {
+  NotifyHostTraversalState();
   const Common::TraversalClient::State state = m_traversal_client->GetState();
 
   if (Common::g_TraversalClient->GetHostID()[0] != '\0')
@@ -1347,7 +1374,7 @@ void NetPlayServer::OnTraversalStateChanged()
   if (!m_dialog)
     return;
 
-  if (state == Common::TraversalClient::State::Failure)
+  if (state == Common::TraversalClient::State::Failure && !m_quickplay_attempt)
     m_dialog->OnTraversalError(m_traversal_client->GetFailureReason());
 
   m_dialog->OnTraversalStateChanged(state);
