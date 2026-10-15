@@ -2,13 +2,19 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 #pragma once
 
+#include <cstdint>
+#include <mutex>
 #include <string>
 #include <utility>
 
-#include "Core/ProjectPlusOnline/Presentation.h"
-
 namespace ProjectPlusOnline
 {
+enum class EntrySource
+{
+  Desktop,
+  InGame
+};
+
 // Capture on callback arrival, before queued GUI delivery or teardown can retire its generation.
 class SessionFailureMailbox
 {

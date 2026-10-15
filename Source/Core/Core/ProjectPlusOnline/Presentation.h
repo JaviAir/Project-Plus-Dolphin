@@ -9,15 +9,11 @@
 #include <mutex>
 #include <optional>
 
+#include "Core/ProjectPlusOnline/LobbyPresentation.h"
 #include "Core/ProjectPlusOnline/Status.h"
 
 namespace ProjectPlusOnline
 {
-enum class EntrySource
-{
-  Desktop,
-  InGame
-};
 enum class PresentationPhase
 {
   Hidden,

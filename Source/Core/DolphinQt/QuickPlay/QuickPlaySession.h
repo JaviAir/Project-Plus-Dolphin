@@ -3,29 +3,25 @@
 
 #pragma once
 
-#include <chrono>
-#include <functional>
 #include <memory>
 #include <optional>
 #include <string>
-#include <vector>
 
 #include <QObject>
 #include <QString>
 
 #include "Common/CommonTypes.h"
-#include "Core/ProjectPlusOnline/Presentation.h"
-#include "Core/ProjectPlusOnline/SetupAction.h"
+#include "Core/ProjectPlusOnline/LobbyPresentation.h"
 #include "Core/SyncIdentifier.h"
 
 class GameListModel;
 class HotkeyScheduler;
 class MenuBar;
 class NetPlayDialog;
-class PersistentQuickPlaySession;
 class QuickPlayController;
 class QuickPlayDialog;
 class QuickPlaySettingsDialog;
+class SeamlessQuickPlay;
 class QWidget;
 class RenderWidget;
 class ToolBar;
@@ -104,6 +100,8 @@ public:
   ~QuickPlaySession() override;
 
   void ShowQuickPlayDiagnostics();
+  // Seamless Quick Play supports X11 (including XWayland) and Windows.
+  static bool IsQuickPlayWindowSystem();
 
   // MainWindow lifecycle hooks.
   void Shutdown();
@@ -142,28 +140,15 @@ public:
   void FinishNetPlayQuit(u64 attempt);
 
 private:
+  friend class SeamlessQuickPlay;
+
   void ShowQuickPlaySettings();
   void StartQuickPlay();
   void StartQuickPlayFrom(ProjectPlusOnline::EntrySource entry);
   void BeginQuickPlaySearch();
-  void PublishQuickPlayPresentation();
-  ProjectPlusOnline::PresentationIdentity QuickPlayIdentity() const;
-  bool OwnsInGameQuickPlay() const;
-  void ObservePausedQuickPlayCSS();
   void PrepareQuickPlayConnection(u64 attempt, bool host);
   void ReportQuickPlayError(const QString& error);
-  void RedrawQuickPlayPresentation(std::function<void(bool)> finished = {});
-  void ValidateQuickPlayContent(u64 attempt, std::function<void(bool, QString)> finished);
-  void InvalidateQuickPlayPresentation();
-  void CancelQuickPlayValidation();
-  void PublishQuickPlayStatus();
   void PrepareQuickPlayHandoff(u64 attempt);
-  void PreparePersistentQuickPlay(u32 game);
-  void HandlePersistentBarrier(u32 game, bool release);
-  void RetirePersistentQuickPlay(bool restore_css);
-  void FinishPersistentQuickPlayRetirement();
-  void TakeLocalQuickPlaySnapshot();
-  bool IsPersistentQuickPlayBoundary() const;
   void AdvanceQuickPlayPresentation(u64 attempt);
   void ReleaseQuickPlayWindow();
   void EndQuickPlaySession(bool restart);
@@ -185,35 +170,9 @@ private:
   bool m_quickplay_joining = false;
   u64 m_quickplay_host_attempt = 0;
   std::optional<QuickPlaySetup> m_quickplay_setup;
-  std::unique_ptr<PersistentQuickPlaySession> m_persistent_quickplay;
-  std::unique_ptr<PersistentQuickPlaySession> m_persistent_candidate;
-  bool m_quickplay_cancel_consumed = false;
-  std::optional<ProjectPlusOnline::PresentationIdentity> m_quickplay_paused_css;
-  bool m_persistent_retiring = false;
-  bool m_persistent_restore_css = false;
-  u32 m_persistent_game = 0;
-  const NetPlay::NetPlayClient* m_persistent_client = nullptr;
-  const NetPlay::NetPlayServer* m_persistent_server = nullptr;
   ProjectPlusOnline::EntrySource m_quickplay_entry = ProjectPlusOnline::EntrySource::Desktop;
   u64 m_quickplay_owned_attempt = 0;
-  u64 m_quickplay_owner_core = 0;
-  bool m_quickplay_validation_was_running = false;
-  std::optional<ProjectPlusOnline::PrepaintFence> m_quickplay_validation_fence;
-  u64 m_quickplay_room_generation = 1;
-  u64 m_quickplay_validation_request = 0;
-  bool m_quickplay_validating = false;
-  bool m_quickplay_blocking_connection = false;
-  bool m_quickplay_redraw_pending = false;
   QString m_quickplay_admission_error;
-  std::vector<std::function<void(bool)>> m_quickplay_redraw_callbacks;
-  std::chrono::steady_clock::time_point m_quickplay_cancelled_until{};
-  // Shows why Quick Play preparation failed for a few seconds after it happens.
-  std::optional<std::chrono::steady_clock::time_point> m_quickplay_recipe_failure_until;
-  // Set by an accepted local leave chord: Leaving… during retirement, then Left session.
-  std::chrono::steady_clock::time_point m_quickplay_left_until{};
-  // The opponent ended the shared session: shown while retiring, then on the restored CSS.
-  bool m_quickplay_opponent_left = false;
-  std::chrono::steady_clock::time_point m_quickplay_opponent_left_until{};
   enum class QuickPlayPresentation
   {
     None,
@@ -241,4 +200,6 @@ private:
   QuickPlayController* m_quickplay_controller = nullptr;
   QuickPlayDialog* m_quickplay_dialog = nullptr;
   QuickPlaySettingsDialog* m_quickplay_settings_dialog = nullptr;
+  // Last: destroyed first, while the session state it reads is still alive.
+  std::unique_ptr<SeamlessQuickPlay> m_seamless;
 };

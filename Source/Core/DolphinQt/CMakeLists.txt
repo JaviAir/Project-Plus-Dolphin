@@ -316,6 +316,8 @@ add_executable(project-plus-dolphin
   QuickPlay/QuickPlaySession.h
   QuickPlay/QuickPlaySettingsDialog.cpp
   QuickPlay/QuickPlaySettingsDialog.h
+  QuickPlay/SeamlessQuickPlay.cpp
+  QuickPlay/SeamlessQuickPlay.h
   MenuBar.cpp
   MenuBar.h
   NetPlay/ChunkedProgressDialog.cpp
