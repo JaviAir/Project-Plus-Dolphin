@@ -62,6 +62,9 @@ public:
   std::optional<QuickPlayContent::TrialLauncher> TrialLauncher() const;
   // The admitted session's declared room game, if it has one.
   std::optional<NetPlay::SyncIdentifier> DeclaredGame() const;
+  // An error when a player of the admitted room reports a different room game: the declared
+  // game hashes the build, so they are on another build. Empty otherwise.
+  QString RoomGameMismatch() const;
 
   void PublishQuickPlayStatus();
 

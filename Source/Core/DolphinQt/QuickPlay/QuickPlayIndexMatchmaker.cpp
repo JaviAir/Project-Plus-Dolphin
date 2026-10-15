@@ -68,9 +68,14 @@ struct Listing
   std::string server_id;
 };
 
-std::string ListingVersion()
+// A seamless search also names its build: the room's declared game hashes it, so peers on
+// different builds could never start.
+std::string ListingVersion(bool seamless)
 {
-  return Common::GetNetPlayCompatDescStr() + std::string(VERSION_SUFFIX);
+  auto version = Common::GetNetPlayCompatDescStr() + std::string(VERSION_SUFFIX);
+  if (seamless)
+    version += "-" + Common::GetScmRevGitStr().substr(0, 12);
+  return version;
 }
 
 bool IsHex(std::string_view value, std::size_t size)
@@ -246,6 +251,7 @@ struct QuickPlayIndexMatchmaker::Attempt
   char preference = 'n';
   std::string digest8;
   std::string key;
+  std::string version;
   std::string nonce;
   std::string index_region;
   Clock::time_point started;
@@ -298,7 +304,7 @@ private:
 bool QuickPlayIndexMatchmaker::Attempt::List(std::vector<Listing>* listings)
 {
   const auto sessions = index.List(
-      {{"name", std::string(NAME_FILTER)}, {"password", "1"}, {"version", ListingVersion()}});
+      {{"name", std::string(NAME_FILTER)}, {"password", "1"}, {"version", version}});
   if (!sessions)
   {
     ++failures;
@@ -338,7 +344,7 @@ std::string QuickPlayIndexMatchmaker::Attempt::ListAs(const std::string& tokens,
   session.in_game = handshake;
   session.player_count = handshake ? 2 : 1;
   session.port = PORT;
-  session.version = ListingVersion();
+  session.version = version;
   listing_lost.store(false);
   if (!index.Add(session))
     return index.GetLastError().empty() ? std::string("NO_RESPONSE") : index.GetLastError();
@@ -788,6 +794,7 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   // Not secret: the derivation is open source. It keeps ordinary browsers out of the room and
   // checks the digest once more before the join.
   attempt->key = "PPQP1:" + (digest.empty() ? std::string("none") : digest);
+  attempt->version = ListingVersion(!digest.empty());
   attempt->nonce = fmt::format("{:06x}", std::uniform_int_distribution<std::uint32_t>(
                                              0, 0xffffff)(attempt->random));
   attempt->index_region = IndexRegion(attempt->mask);

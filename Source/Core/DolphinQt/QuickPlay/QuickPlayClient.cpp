@@ -194,10 +194,11 @@ void QuickPlayClient::Start(const QStringList& regions, const QString& host_pref
              "Play Settings, or choose the Dolphin lobby.") :
           NormalizeCoordinatorUrl(base_url, &normalized_url);
   const QString build = QString::fromStdString(Common::GetNetPlayCompatRevStr());
-  // Matched exactly: a search with an origin keeps its running game, so only an equal origin can
-  // join it. Without one (desktop), the handoff is ordinary NetPlay.
+  // Matched exactly: a search with an origin keeps its running game, so only the same build and
+  // origin can join it. Without one (desktop), the handoff is ordinary NetPlay.
   const QString session = QString::fromStdString(
-      origin_digest.empty() ? std::string("ordinary") : "seamless/1:" + origin_digest);
+      origin_digest.empty() ? std::string("ordinary") :
+                              "seamless/2:" + Common::GetScmRevGitStr() + ":" + origin_digest);
   const QString version = QString::fromStdString(Common::GetScmDescStr());
   if (!url_error.isEmpty() || !regions_valid || !IsField(build, 128) || !IsField(session, 128) ||
       !IsField(version, 64))

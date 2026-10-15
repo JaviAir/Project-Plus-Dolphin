@@ -228,6 +228,24 @@ std::optional<NetPlay::SyncIdentifier> SeamlessQuickPlay::DeclaredGame() const
   return std::nullopt;
 }
 
+QString SeamlessQuickPlay::RoomGameMismatch() const
+{
+  const auto client = Settings::Instance().GetNetPlayClient();
+  if (!m_persistent_quickplay || !client)
+    return {};
+  for (const auto& player : client->GetLobbyState().players)
+  {
+    if (player.game_status != NetPlay::SyncIdentifierComparison::SameGame &&
+        player.game_status != NetPlay::SyncIdentifierComparison::Unknown)
+    {
+      INFO_LOG_FMT(NETPLAY, "QuickPlay: player {} reports a different room game ({})", player.pid,
+                   static_cast<int>(player.game_status));
+      return tr("Your opponent is on a different Quick Play build.");
+    }
+  }
+  return {};
+}
+
 void SeamlessQuickPlay::Shutdown()
 {
   InvalidateQuickPlayPresentation();

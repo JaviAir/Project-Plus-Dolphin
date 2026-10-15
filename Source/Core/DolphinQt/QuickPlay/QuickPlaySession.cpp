@@ -640,6 +640,11 @@ void QuickPlaySession::CheckQuickPlayLaunch(u64 attempt)
   if (!m_quickplay_setup || m_quickplay_setup->attempt != attempt ||
       !m_quickplay_controller->OwnsAttempt(attempt))
     return;
+  if (const auto mismatch = m_seamless->RoomGameMismatch(); !mismatch.isEmpty())
+  {
+    m_quickplay_controller->OnLaunchFailed(attempt, mismatch);
+    return;
+  }
   const auto client = Settings::Instance().GetNetPlayClient();
   if (!client || !client->IsConnected())
   {
