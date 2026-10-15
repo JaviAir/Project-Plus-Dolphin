@@ -14,6 +14,16 @@ namespace Config
 
 // Main.NetPlay
 
+// "lobby" (Dolphin's NetPlay index, NETPLAY_INDEX_URL) or "coordinator".
+extern const Info<std::string> NETPLAY_QUICKPLAY_MATCHMAKING;
+extern const Info<std::string> NETPLAY_QUICKPLAY_COORDINATOR;
+// Comma-separated region tokens. Empty means not saved yet: read the legacy single
+// QuickPlayRegion instead (see QuickPlayMatchmaker::LoadRegions).
+extern const Info<std::string> NETPLAY_QUICKPLAY_REGIONS;
+extern const Info<std::string> NETPLAY_QUICKPLAY_REGION;
+// "host", "none" or "join".
+extern const Info<std::string> NETPLAY_QUICKPLAY_HOST_PREFERENCE;
+
 extern const Info<std::string> NETPLAY_TRAVERSAL_SERVER;
 extern const Info<u16> NETPLAY_TRAVERSAL_PORT;
 extern const Info<u16> NETPLAY_TRAVERSAL_PORT_ALT;
