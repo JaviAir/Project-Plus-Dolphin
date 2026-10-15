@@ -1765,13 +1765,12 @@ void MainWindow::PublishQuickPlayStatus()
       (m_persistent_quickplay && m_quickplay_setup);
   Common::ScopeGuard publish_presentation([this] { PublishQuickPlayPresentation(); });
   using ProjectPlusOnline::GuestStatus;
-  using ProjectPlusOnline::Reason;
   using State = QuickPlayController::State;
   ProjectPlusOnline::persistent_local_input = PersistentQuickPlaySession::IsConfigured() &&
                                               !m_persistent_quickplay && !m_persistent_retiring &&
                                               !NetPlay::IsNetPlayRunning() && !m_exit_requested &&
                                               !m_quickplay_validating;
-  const auto publish = [this](GuestStatus status, Reason reason = Reason::None) {
+  const auto publish = [this](GuestStatus status) {
     const auto attempt =
         m_quickplay_controller && m_quickplay_recovery == QuickPlayRecovery::None &&
                 !m_quickplay_validating && !m_quickplay_blocking_connection &&
@@ -1780,13 +1779,10 @@ void MainWindow::PublishQuickPlayStatus()
             0;
     if (ProjectPlusOnline::guest_cancel_attempt.load() != attempt)
       ProjectPlusOnline::guest_cancel_attempt = 0;
-    if (ProjectPlusOnline::IsCancellable(status) && !attempt)
-      reason = Reason::Lifecycle;
-    ProjectPlusOnline::guest_status.Publish(status, reason);
     ProjectPlusOnline::guest_cancel_attempt = attempt;
   };
   if (m_quickplay_recovery != QuickPlayRecovery::None)
-    return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+    return publish(GuestStatus::Unavailable);
   const auto client = Settings::Instance().GetNetPlayClient();
   if (client)
   {
@@ -1809,7 +1805,7 @@ void MainWindow::PublishQuickPlayStatus()
   {
   case State::Idle:
     if (Core::GetState(m_system) == Core::State::Stopping)
-      return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+      return publish(GuestStatus::Unavailable);
     return publish(m_quickplay_setup ? GuestStatus::Connecting : GuestStatus::Idle);
   case State::Searching:
     return publish(GuestStatus::Searching);
@@ -1817,10 +1813,10 @@ void MainWindow::PublishQuickPlayStatus()
   case State::MatchedClient:
     return publish(GuestStatus::Matched);
   case State::Error:
-    return publish(GuestStatus::Error, Reason::AttemptFailed);
+    return publish(GuestStatus::Error);
   case State::NetPlayConnected:
   case State::NetPlayOwned:
-    return publish(GuestStatus::Unavailable, Reason::Lifecycle);
+    return publish(GuestStatus::Unavailable);
   default:
     return publish(GuestStatus::Connecting);
   }

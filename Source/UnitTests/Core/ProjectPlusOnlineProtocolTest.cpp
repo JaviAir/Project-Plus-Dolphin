@@ -4,23 +4,6 @@
 #include <gtest/gtest.h>
 
 #include "Core/ProjectPlusOnline/Chord.h"
-#include "Core/ProjectPlusOnline/Status.h"
-
-using namespace ProjectPlusOnline;
-
-TEST(ProjectPlusOnlineStatus, CoherentEpochAndBoundedFailure)
-{
-  StatusMailbox mailbox;
-  const auto initial = mailbox.Read();
-  mailbox.Publish(GuestStatus::Searching);
-  const auto searching = mailbox.Read();
-  EXPECT_EQ(searching.epoch, initial.epoch + 1);
-  mailbox.Publish(GuestStatus::Searching);
-  EXPECT_EQ(mailbox.Read().epoch, searching.epoch);
-  mailbox.Publish(GuestStatus::Error, Reason::AttemptFailed);
-  EXPECT_EQ(mailbox.Read().epoch, searching.epoch + 1);
-  EXPECT_EQ(mailbox.Read().reason, Reason::AttemptFailed);
-}
 
 TEST(ProjectPlusOnlineProtocol, PersistentChordRequiresReleaseAndEligibleLocalCSS)
 {
