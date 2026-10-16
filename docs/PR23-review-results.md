@@ -30,10 +30,18 @@ Linux Release, Qt 6.7.3, GCC. Existing suite: 1,351/1,352 pass; `PatchAllowlist.
 - After fix: collision isolation, equal-revision matching with different platform metadata, legacy isolation, and ordinary handshake all pass (`commit3-after.log`, 10.47 s). Generated HTTP keys and both peers' match IDs/roles are asserted.
 - Linux application and all four focused executables build (`commit3-after-build.log`). Qt test targets adopt DolphinQt's MSVC RTTI convention. No new production files require handwritten project entries.
 
+## 4. Optional coordinator clearing
+
+- Lobby mode treats empty/whitespace-only input as a saved empty URL. Both base and effective values use the existing settings-layer convention. Custom coordinator mode retains nonempty URL validation; unusable nonempty lobby values retain their existing treatment.
+- The real settings dialog runs offscreen with the Fusion style (inherited GTK platform themes can otherwise try to connect to a display). An isolated persistent memory store verifies Save, reopen and configuration-layer reload without touching user files or making HTTP calls.
+- Before fix: clearing fails the persisted-value assertion (`commit4-before.log`).
+- After fix: all ten cases pass (`commit4-after.log`): empty/whitespace clearing with and without a command-line override, valid custom/fallback saving, empty/whitespace/invalid custom rejection, and existing invalid optional-input behavior. Each successful save checks base, effective, stored/reloaded values and fallback eligibility.
+- Linux application and offscreen settings executable build (`commit4-after-build.log`).
+
 ## Reproduction
 
 Configure with `ENABLE_TESTS=ON`, build `unittests` (runs CTest), or build the individual test targets and run `ctest --test-dir <build> --output-on-failure`. Python 3 is required for the private HTTP fixtures. Loopback sockets must be permitted. Qt tests, when present, use `QT_QPA_PLATFORM=offscreen` and are only built with `ENABLE_QT=ON`.
 
 ## Remaining validation
 
-The subsequent two fixes, final suite/build, Windows validation and real GUI/traversal/gameplay checks remain to be recorded. Loopback fixtures do not establish gameplay or cross-platform traversal compatibility.
+The final controller-default fix, final suite/build, Windows validation and real GUI/traversal/gameplay checks remain to be recorded. Loopback fixtures do not establish gameplay or cross-platform traversal compatibility.

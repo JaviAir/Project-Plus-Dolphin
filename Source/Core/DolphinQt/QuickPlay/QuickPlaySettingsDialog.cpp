@@ -177,7 +177,12 @@ void QuickPlaySettingsDialog::Save()
 {
   const auto matchmaking = m_matchmaking->currentData().toString().toStdString();
   QString normalized;
-  const auto error = QuickPlayClient::NormalizeCoordinatorUrl(m_coordinator->text(), &normalized);
+  // In lobby mode an explicitly blank optional URL disables coordinator fallback. Keep
+  // normalization's nonempty requirement for custom-coordinator mode.
+  const bool clear_optional = matchmaking == "lobby" && m_coordinator->text().trimmed().isEmpty();
+  const auto error = clear_optional ? QString{} :
+                                     QuickPlayClient::NormalizeCoordinatorUrl(m_coordinator->text(),
+                                                                              &normalized);
   // The lobby ignores the coordinator field; an unusable entry there is left unsaved.
   if (!error.isEmpty() && matchmaking == "coordinator")
   {

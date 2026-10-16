@@ -94,3 +94,20 @@ if(ENABLE_QT)
             $<TARGET_FILE:quickplay_identity_other_platform>)
   set_tests_properties(quickplay_revision_matching PROPERTIES TIMEOUT 60)
 endif()
+
+if(ENABLE_QT)
+  find_package(Qt6 REQUIRED COMPONENTS Widgets)
+  add_executable(quickplay_settings_tests EXCLUDE_FROM_ALL
+    NetPlay/Settings.cpp StubHost.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayClient.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlaySettingsDialog.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlaySettingsDialog.h)
+  set_target_properties(quickplay_settings_tests PROPERTIES AUTOMOC ON)
+  configure_quickplay_test(quickplay_settings_tests)
+  target_link_libraries(quickplay_settings_tests PRIVATE core uicommon Qt6::Widgets)
+  add_dependencies(unittests quickplay_settings_tests)
+  add_test(NAME quickplay_coordinator_settings COMMAND quickplay_settings_tests)
+  set_tests_properties(quickplay_coordinator_settings PROPERTIES
+    TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_STYLE_OVERRIDE=Fusion")
+endif()
