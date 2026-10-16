@@ -131,3 +131,17 @@ if(ENABLE_QT)
             $<TARGET_FILE:quickplay_deadline_tests>)
   set_tests_properties(quickplay_index_deadlines PROPERTIES TIMEOUT 90)
 endif()
+
+if(ENABLE_QT)
+  add_executable(quickplay_overlap_tests EXCLUDE_FROM_ALL
+    NetPlay/IndexOverlap.cpp StubHost.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayIndexMatchmaker.cpp)
+  target_link_libraries(quickplay_overlap_tests PRIVATE core uicommon Qt6::Core)
+  configure_quickplay_test(quickplay_overlap_tests)
+  add_dependencies(unittests quickplay_overlap_tests)
+  add_test(NAME quickplay_index_overlap
+    COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/overlap.py
+            $<TARGET_FILE:quickplay_overlap_tests>)
+  set_tests_properties(quickplay_index_overlap PROPERTIES TIMEOUT 70)
+endif()

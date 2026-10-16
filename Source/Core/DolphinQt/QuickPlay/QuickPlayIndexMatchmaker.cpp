@@ -232,7 +232,9 @@ struct QuickPlayIndexMatchmaker::Attempt
   };
 
   explicit Attempt(Now clock_)
-      : clock(std::move(clock_)), index(INDEX_REQUEST_TIMEOUT, [this] { return cancelled.load(); })
+      : clock(std::move(clock_)),
+        directory(INDEX_REQUEST_TIMEOUT, [this] { return cancelled.load(); }),
+        index(INDEX_REQUEST_TIMEOUT, [this] { return cancelled.load(); })
   {
     index.SetErrorCallback([this] { listing_lost.store(true); });
   }
@@ -286,7 +288,10 @@ struct QuickPlayIndexMatchmaker::Attempt
   int restore_failures = 0;
   Clock::time_point next_restore{};
   Clock::time_point setup_deadline{};
-  // Last: its keepalive thread reports into listing_lost.
+  // Worker-only directory queries must not share error storage with the keepalive thread.
+  NetPlayIndex directory;
+  // Last: its keepalive thread reports into listing_lost. Read its error only after observing
+  // that flag (the final error write precedes the callback), or after Add joined the thread.
   NetPlayIndex index;
 
 private:
@@ -312,11 +317,11 @@ private:
 bool QuickPlayIndexMatchmaker::Attempt::List(std::vector<Listing>* listings)
 {
   const auto sessions =
-      index.List({{"name", std::string(NAME_FILTER)}, {"password", "1"}, {"version", version}});
+      directory.List({{"name", std::string(NAME_FILTER)}, {"password", "1"}, {"version", version}});
   if (!sessions)
   {
     ++failures;
-    WARN_LOG_FMT(NETPLAY, "QuickPlay lobby: list failed ({})", index.GetLastError());
+    WARN_LOG_FMT(NETPLAY, "QuickPlay lobby: list failed ({})", directory.GetLastError());
     return false;
   }
   failures = 0;
