@@ -23,3 +23,14 @@ endmacro()
 add_subdirectory(Common)
 add_subdirectory(Core)
 add_subdirectory(VideoCommon)
+
+# These fixtures build production sources and run only on ephemeral loopback ports.
+# Keep the index/server tests usable with ENABLE_QT=OFF.
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(netplay_index_tests EXCLUDE_FROM_ALL NetPlay/Index.cpp StubHost.cpp)
+target_link_libraries(netplay_index_tests PRIVATE core uicommon)
+add_dependencies(unittests netplay_index_tests)
+add_test(NAME netplay_index_lifecycle
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/mock_index.py
+          $<TARGET_FILE:netplay_index_tests>)
+set_tests_properties(netplay_index_lifecycle PROPERTIES TIMEOUT 100)

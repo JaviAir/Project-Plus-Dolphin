@@ -800,6 +800,7 @@ include_directories("${PROJECT_BINARY_DIR}/Source/Core")
 # Unit testing.
 #
 if(ENABLE_TESTS)
+  enable_testing()
   dolphin_find_optional_system_library_pkgconfig(GTEST
     gtest gtest::gtest Externals/gtest
   )

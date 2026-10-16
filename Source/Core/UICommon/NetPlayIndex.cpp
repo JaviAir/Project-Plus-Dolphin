@@ -21,8 +21,7 @@ NetPlayIndex::NetPlayIndex() = default;
 
 NetPlayIndex::~NetPlayIndex()
 {
-  if (!m_secret.empty())
-    Remove();
+  Remove();
 }
 
 static std::optional<picojson::value> ParseResponse(std::span<const u8> response)
@@ -148,7 +147,8 @@ void NetPlayIndex::NotificationLoop()
     {
       m_last_error = "BAD_JSON";
       m_secret.clear();
-      m_error_callback();
+      if (m_error_callback)
+        m_error_callback();
       return;
     }
 
@@ -158,7 +158,8 @@ void NetPlayIndex::NotificationLoop()
     {
       m_last_error = std::move(status);
       m_secret.clear();
-      m_error_callback();
+      if (m_error_callback)
+        m_error_callback();
       return;
     }
   }
@@ -166,6 +167,12 @@ void NetPlayIndex::NotificationLoop()
 
 bool NetPlayIndex::Add(const NetPlaySession& session)
 {
+  // Join before reusing any worker state, including on a failed re-add. An error callback
+  // runs on that worker and must leave re-adding to the owner.
+  if (!StopSessionThread())
+    return false;
+  Remove();
+
   Common::HttpRequest request;
   auto response = request.Get(
       fmt::format("{base}/v0/session/add?name={name}&region={region}&game={game}"
@@ -209,9 +216,6 @@ bool NetPlayIndex::Add(const NetPlaySession& session)
   m_player_count = session.player_count;
   m_game = session.game_id;
 
-  m_session_thread_exit_event.Set();
-  if (m_session_thread.joinable())
-    m_session_thread.join();
   m_session_thread_exit_event.Reset();
 
   m_session_thread = std::thread([this] { NotificationLoop(); });
@@ -234,15 +238,23 @@ void NetPlayIndex::SetGame(std::string game)
   m_game = std::move(game);
 }
 
+bool NetPlayIndex::StopSessionThread()
+{
+  m_session_thread_exit_event.Set();
+  if (m_session_thread.joinable())
+  {
+    // A callback may request removal. The owner will join after the callback returns.
+    if (m_session_thread.get_id() == std::this_thread::get_id())
+      return false;
+    m_session_thread.join();
+  }
+  return true;
+}
+
 void NetPlayIndex::Remove()
 {
-  if (m_secret.empty())
+  if (!StopSessionThread() || m_secret.empty())
     return;
-
-  m_session_thread_exit_event.Set();
-
-  if (m_session_thread.joinable())
-    m_session_thread.join();
 
   // We don't really care whether this fails or not
   Common::HttpRequest request;

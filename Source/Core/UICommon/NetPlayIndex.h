@@ -57,10 +57,12 @@ public:
 
   const std::string& GetLastError() const;
 
+  // Called on the keepalive thread. Report errors to the owner; do not destroy the index here.
   void SetErrorCallback(std::function<void()> callback);
 
 private:
   void NotificationLoop();
+  bool StopSessionThread();
 
   std::string m_secret;
   std::string m_game;
