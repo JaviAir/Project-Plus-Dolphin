@@ -31,6 +31,20 @@ add_executable(netplay_index_tests EXCLUDE_FROM_ALL NetPlay/Index.cpp StubHost.c
 target_link_libraries(netplay_index_tests PRIVATE core uicommon)
 add_dependencies(unittests netplay_index_tests)
 add_test(NAME netplay_index_lifecycle
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/mock_index.py
+  COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/mock_index.py
           $<TARGET_FILE:netplay_index_tests>)
 set_tests_properties(netplay_index_lifecycle PROPERTIES TIMEOUT 100)
+
+if(ENABLE_QT)
+  find_package(Qt6 REQUIRED COMPONENTS Core)
+  add_executable(quickplay_lobby_tests EXCLUDE_FROM_ALL
+    NetPlay/QuickPlay.cpp StubHost.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayIndexMatchmaker.cpp)
+  target_link_libraries(quickplay_lobby_tests PRIVATE core uicommon Qt6::Core)
+  add_dependencies(unittests quickplay_lobby_tests)
+  add_test(NAME quickplay_listing_recovery
+    COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/recovery.py
+            $<TARGET_FILE:quickplay_lobby_tests>)
+  set_tests_properties(quickplay_listing_recovery PROPERTIES TIMEOUT 150)
+endif()

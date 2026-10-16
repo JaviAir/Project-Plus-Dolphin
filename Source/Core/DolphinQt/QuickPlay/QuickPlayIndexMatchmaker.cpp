@@ -48,6 +48,9 @@ constexpr auto SEARCH_TIMEOUT = 180s;
 constexpr auto SEARCH_LIST_INTERVAL = 3s;
 constexpr auto CLAIM_LIST_INTERVAL = 2s;
 constexpr auto CLAIM_TIMEOUT = 12s;
+// The controller starts the same deadline when it claims an assignment. Recovery must never
+// extend it, including while validation is waiting on the worker.
+constexpr auto SETUP_TIMEOUT = 25s;
 constexpr auto JOIN_PREFERENCE_SEARCH = 15s;
 constexpr auto BLOCK_TIME = 60s;
 // Consecutive lists without the peer's listing before it counts as gone. A player replacing
@@ -224,7 +227,7 @@ struct QuickPlayIndexMatchmaker::Attempt
     Published,
   };
 
-  Attempt()
+  explicit Attempt(Now clock_) : clock(std::move(clock_))
   {
     index.SetErrorCallback([this] { listing_lost.store(true); });
   }
@@ -243,6 +246,7 @@ struct QuickPlayIndexMatchmaker::Attempt
   std::atomic<bool> listing_lost{false};
 
   // Immutable after Start.
+  const Now clock;
   std::uint16_t mask = 0;
   char preference = 'n';
   std::string version;
@@ -271,7 +275,12 @@ struct QuickPlayIndexMatchmaker::Attempt
   SearchStage stage = SearchStage::Normal;
   int stage_seconds = 0;
   std::map<std::string, Clock::time_point> blocked;
+  // Desired listing, retained even while the index temporarily has no live session.
   std::optional<NetPlaySession> listed;
+  bool recovering = false;
+  int restore_failures = 0;
+  Clock::time_point next_restore{};
+  Clock::time_point setup_deadline{};
   // Last: its keepalive thread reports into listing_lost.
   NetPlayIndex index;
 
@@ -281,7 +290,7 @@ private:
   bool List(std::vector<Listing>* listings);
   // Replaces our listing. Returns the index status on failure, else an empty string.
   std::string ListAs(const std::string& tokens, bool handshake, const std::string& server_id = {});
-  void RestoreListing();
+  std::optional<Result> RestoreListing();
   Result Search(const std::vector<Listing>& listings, Clock::time_point now);
   Result Wait(const std::vector<Listing>& listings, Clock::time_point now);
   Result AwaitAccept(const std::vector<Listing>& listings, Clock::time_point now);
@@ -350,17 +359,49 @@ void QuickPlayIndexMatchmaker::Attempt::Unlist()
 {
   index.Remove();
   listed.reset();
+  recovering = false;
+  listing_lost.store(false);
 }
 
-void QuickPlayIndexMatchmaker::Attempt::RestoreListing()
+std::optional<QuickPlayMatchmaker::Result> QuickPlayIndexMatchmaker::Attempt::RestoreListing()
 {
-  if (!listing_lost.exchange(false) || !listed)
-    return;
-  // The keepalive lost the session (timeout or index restart). List the same name again.
-  WARN_LOG_FMT(NETPLAY, "QuickPlay lobby: listing lost ({}); listing again", index.GetLastError());
-  index.Remove();
-  if (!index.Add(*listed))
-    listed.reset();
+  if (listing_lost.exchange(false) && listed)
+  {
+    WARN_LOG_FMT(NETPLAY, "QuickPlay lobby: listing lost ({}); listing again",
+                 index.GetLastError());
+    index.Remove();
+    recovering = true;
+    restore_failures = 0;
+    next_restore = {};
+  }
+  if (!recovering || cancelled.load() || clock() < next_restore)
+    return std::nullopt;
+  if (phase == Phase::Claiming && clock() >= claim_deadline)
+  {
+    Unlist();
+    return OpponentLeft();
+  }
+  if (index.Add(*listed))
+  {
+    // Cancel may have arrived during the HTTP request. The serialized Cancel also removes,
+    // but do not leave a live listing until that queued task runs.
+    if (cancelled.load())
+      Unlist();
+    recovering = false;
+    restore_failures = 0;
+    notice.clear();
+    return std::nullopt;
+  }
+  const auto status = index.GetLastError();
+  next_restore = clock() + SEARCH_LIST_INTERVAL;
+  if (status == "TOO_MANY_SESSIONS")
+  {
+    notice = CapNotice();
+    return std::nullopt;
+  }
+  if ((status == "NO_RESPONSE" || status == "BAD_JSON") && ++restore_failures < LIST_FAILURES)
+    return std::nullopt;
+  return AddFailed(status);
 }
 
 Clock::duration QuickPlayIndexMatchmaker::Attempt::WaitInterval()
@@ -385,7 +426,7 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Step()
   {
     // A claim lasts a few seconds; keep showing the stage it started from.
     if (phase != Phase::Claiming)
-      UpdateStage(Clock::now());
+      UpdateStage(clock());
     result.stage = stage;
     result.stage_seconds = stage_seconds;
   }
@@ -414,7 +455,7 @@ void QuickPlayIndexMatchmaker::Attempt::UpdateStage(Clock::time_point now)
 
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Advance()
 {
-  const auto now = Clock::now();
+  const auto now = clock();
   if (now - started >= SEARCH_TIMEOUT)
   {
     Unlist();
@@ -425,7 +466,10 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Advance()
   }
   if (now < next_list)
     return Searching(notice);
-  RestoreListing();
+  if (auto error = RestoreListing())
+    return *error;
+  if (recovering || cancelled.load())
+    return Searching(notice);
   std::vector<Listing> listings;
   if (!List(&listings))
   {
@@ -577,7 +621,7 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Accept(const List
     WARN_LOG_FMT(NETPLAY, "QuickPlay lobby: accept listing failed ({})", status);
     phase = Phase::Searching;
     list_after.reset();
-    next_list = Clock::now();
+    next_list = clock();
     return Searching(notice);
   }
   INFO_LOG_FMT(NETPLAY, "QuickPlay lobby: {} accepted {}, {} hosts", waiter, claimer,
@@ -627,6 +671,7 @@ QuickPlayIndexMatchmaker::Attempt::AwaitAccept(const std::vector<Listing>& listi
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Matched(std::uint16_t peer_mask)
 {
   phase = Phase::Matched;
+  setup_deadline = clock() + SETUP_TIMEOUT;
   region = AgreedRegion(mask & peer_mask);
   INFO_LOG_FMT(NETPLAY, "QuickPlay lobby: matched in {}", region.toStdString());
   match_id = QString::fromStdString(waiter + claimer);
@@ -667,17 +712,32 @@ QuickPlayIndexMatchmaker::Attempt::FindHost(const std::vector<Listing>& listings
 
 QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Validate()
 {
-  for (int attempt = 0; attempt < PEER_MISSES && !cancelled.load(); ++attempt)
+  int misses = 0;
+  while (!cancelled.load())
   {
-    if (attempt)
+    if (clock() >= setup_deadline)
     {
-      for (int i = 0; i < 10 && !cancelled.load(); ++i)
-        std::this_thread::sleep_for(100ms);
+      Unlist();
+      return Failure(QObject::tr("Quick Play room setup timed out. Cancel and try again."));
     }
-    RestoreListing();
-    std::vector<Listing> listings;
-    if (List(&listings) && PeerPresent(listings))
-      return MatchedResult();
+    if (auto error = RestoreListing())
+      return *error;
+    if (!recovering)
+    {
+      std::vector<Listing> listings;
+      if (List(&listings) && PeerPresent(listings))
+        return MatchedResult();
+      if (failures >= LIST_FAILURES)
+      {
+        Unlist();
+        return Unreachable();
+      }
+      if (++misses >= PEER_MISSES)
+        break;
+    }
+    // Keep cancellation responsive while waiting for the next recovery/validation request.
+    for (int i = 0; i < 10 && !cancelled.load(); ++i)
+      std::this_thread::sleep_for(100ms);
   }
   INFO_LOG_FMT(NETPLAY, "QuickPlay lobby: opponent left before the handoff completed");
   Unlist();
@@ -691,11 +751,19 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::PollHost(const QS
   Result result;
   result.state = State::WaitingForHost;
   result.match_id = match_id;
-  const auto now = Clock::now();
+  const auto now = clock();
+  if (now >= setup_deadline)
+  {
+    Unlist();
+    return Failure(QObject::tr("Quick Play room setup timed out. Cancel and try again."));
+  }
   if (now < next_list)
     return result;
   next_list = now + CLAIM_LIST_INTERVAL;
-  RestoreListing();
+  if (auto error = RestoreListing())
+    return *error;
+  if (recovering || cancelled.load())
+    return result;
   std::vector<Listing> listings;
   if (!List(&listings))
     return failures >= LIST_FAILURES ? Unreachable() : result;
@@ -748,7 +816,8 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Publish(const QSt
   return result;
 }
 
-QuickPlayIndexMatchmaker::QuickPlayIndexMatchmaker(QObject* parent) : QuickPlayMatchmaker(parent)
+QuickPlayIndexMatchmaker::QuickPlayIndexMatchmaker(QObject* parent, Now now)
+    : QuickPlayMatchmaker(parent), m_now(std::move(now))
 {
 }
 
@@ -764,7 +833,7 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
                                      Callback callback)
 {
   Cancel();
-  auto attempt = std::make_shared<Attempt>();
+  auto attempt = std::make_shared<Attempt>(m_now);
   m_attempt = attempt;
   m_callback = std::move(callback);
   m_pending = true;
@@ -784,7 +853,7 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   attempt->nonce = fmt::format(
       "{:06x}", std::uniform_int_distribution<std::uint32_t>(0, 0xffffff)(attempt->random));
   attempt->index_region = IndexRegion(attempt->mask);
-  attempt->started = Clock::now();
+  attempt->started = m_now();
   INFO_LOG_FMT(NETPLAY, "QuickPlay lobby: search started as {}", attempt->nonce);
   m_worker.Push([this, attempt] {
     if (!attempt->cancelled.load())

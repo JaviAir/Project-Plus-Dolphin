@@ -14,10 +14,18 @@ Linux Release, Qt 6.7.3, GCC. Existing suite: 1,351/1,352 pass; `PatchAllowlist.
 - After fix: all eight cases pass: normal/repeated removal, rejected and malformed keepalive, destruction, failed/successful re-add, active replacement, callback removal (`commit1-after.log`, 34.45 s).
 - Linux application and focused test build pass (`commit1-after-build.log`).
 
+## 2. Listing recovery
+
+- Keep the desired listing and phase across refused restoration, retry every three seconds, retain nonce/agreement, and report permanent errors or three transport failures through the existing result path. Cap errors retain their notice. Search/claim/setup deadlines are not renewed. Cancellation removes a listing even when it arrives during an in-flight restoration.
+- A supplied monotonic clock is the only new test seam. The separate Qt Core test executable compiles the production matchmaker; headless lifecycle tests acquire no Qt requirement.
+- Before fix: `waiting-cap` fails with “lost listing was discarded after its first refused restoration” (`commit2-before.log`).
+- After fix: all 16 scripted cases pass (`commit2-after.log`, 94.75 s): cap/transport recovery, permanent rejection, sustained transport failure, cancellation after refusal and during a successful request, search and claim timeouts, claiming recovery, matched validation recovery/rejection/cancellation/timeout, and host-wait recovery/rejection/timeout. Fixture asserts exact listing contents, request counts and no orphan sessions.
+- Linux application and focused executable builds pass (`commit2-after-build.log`, `commit2-tests-build.log`).
+
 ## Reproduction
 
 Configure with `ENABLE_TESTS=ON`, build `unittests` (runs CTest), or build the individual test targets and run `ctest --test-dir <build> --output-on-failure`. Python 3 is required for the private HTTP fixtures. Loopback sockets must be permitted. Qt tests, when present, use `QT_QPA_PLATFORM=offscreen` and are only built with `ENABLE_QT=ON`.
 
 ## Remaining validation
 
-The subsequent four fixes, final suite/build, Windows validation and real GUI/traversal/gameplay checks remain to be recorded. Loopback fixtures do not establish gameplay or cross-platform traversal compatibility.
+The subsequent three fixes, final suite/build, Windows validation and real GUI/traversal/gameplay checks remain to be recorded. Loopback fixtures do not establish gameplay or cross-platform traversal compatibility.

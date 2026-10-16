@@ -3,6 +3,7 @@
 
 #pragma once
 
+#include <chrono>
 #include <functional>
 #include <memory>
 
@@ -26,7 +27,10 @@
 class QuickPlayIndexMatchmaker final : public QuickPlayMatchmaker
 {
 public:
-  explicit QuickPlayIndexMatchmaker(QObject* parent = nullptr);
+  // A monotonic clock can be supplied by bounded integration fixtures.
+  using Now = std::function<std::chrono::steady_clock::time_point()>;
+  explicit QuickPlayIndexMatchmaker(QObject* parent = nullptr,
+                                    Now now = std::chrono::steady_clock::now);
   ~QuickPlayIndexMatchmaker() override;
 
   void Start(const QStringList& regions, const QString& host_preference,
@@ -41,6 +45,7 @@ private:
   void Push(std::function<Result(Attempt&)> step);
   void Deliver(const std::shared_ptr<Attempt>& attempt, Result result);
 
+  const Now m_now;
   std::shared_ptr<Attempt> m_attempt;
   Callback m_callback;
   bool m_pending = false;
