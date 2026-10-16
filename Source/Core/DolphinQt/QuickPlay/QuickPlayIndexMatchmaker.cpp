@@ -244,6 +244,7 @@ struct QuickPlayIndexMatchmaker::Attempt
   Result Step();
   // After the handoff: the peer's listing must still be there.
   Result Validate();
+  Result MaintainPublished();
   Result PollHost(const QString& id);
   Result Publish(const QString& id, const std::string& host_code);
   void Unlist();
@@ -832,6 +833,22 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Publish(const QSt
   return result;
 }
 
+QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::MaintainPublished()
+{
+  if (clock() >= setup_deadline)
+  {
+    Unlist();
+    return Failure(QObject::tr("Quick Play room setup timed out. Cancel and try again."));
+  }
+  if (auto error = RestoreListing())
+    return *error;
+  // The room and agreement already exist. Only maintain the saved H listing here;
+  // do not resume searching or query the directory while waiting for the connection.
+  Result result;
+  result.state = State::HostPublished;
+  return result;
+}
+
 QuickPlayIndexMatchmaker::QuickPlayIndexMatchmaker(QObject* parent, Now now)
     : QuickPlayMatchmaker(parent), m_now(std::move(now))
 {
@@ -892,6 +909,8 @@ void QuickPlayIndexMatchmaker::Push(std::function<Result(Attempt&)> step)
 void QuickPlayIndexMatchmaker::Poll()
 {
   Push([](Attempt& attempt) {
+    if (attempt.phase == Attempt::Phase::Published)
+      return attempt.MaintainPublished();
     return attempt.phase == Attempt::Phase::Matched ? attempt.Validate() : attempt.Step();
   });
 }

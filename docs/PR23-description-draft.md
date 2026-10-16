@@ -2,6 +2,8 @@
 
 Adds Quick Play settings, search UI and lobby/coordinator matchmaking. Lobby searchers exchange short-lived listings, agree on a peer and host role, then hand off to ordinary NetPlay. Temporary listing loss retries the same identity/agreement within the existing search and room-setup deadlines; cancellation attempts bounded cleanup of the listing. Index worker cleanup also handles rejected keepalives safely, and directory queries use separate error storage from listing maintenance. Quick Play index operations have three-second total transfer deadlines; polls and keepalives observe cancellation. Admission keeps its bounded response window to recover a secret for cleanup. Shutdown has a conservative nine-second worker drain budget plus scheduling with asynchronous DNS. If an admission secret never arrives or removal cannot reach the index, remote expiry remains necessary.
 
+Lobby hosts continue maintaining their published room listing until the opponent connects. If the listing is lost, they restore the same agreement and room code within the original setup deadline; cancellation or connection stops maintenance. Controller-level loopback tests cover recovery, rejection, timeout and cancellation/connection during restoration.
+
 Lobby compatibility requires an identical full Git revision in the `+ppqp2` namespace. Older display-only Quick Play listings are intentionally isolated. Ordinary NetPlay's exact-revision handshake and the coordinator's exact-revision rule remain unchanged. Platform display metadata does not determine compatibility.
 
 The Dolphin lobby is the default backend. A valid optional coordinator URL enables pre-match fallback; saving an empty URL clears persisted and effective settings and disables fallback. Custom-coordinator mode requires a valid nonempty URL. Rooms automatically assign GameCube ports while Wii Remote assignment remains manual, restoring Project+ Dolphin's earlier default for both ordinary and Quick Play rooms.
@@ -10,4 +12,4 @@ Validation uses source-built tests with private loopback HTTP/ENet fixtures, iso
 
 Windows builds/runtime tests and human GUI, traversal and gameplay checks remain pending. Loopback matching and protocol tests do not establish gameplay or Linux–Windows traversal compatibility.
 
-This is a local description draft; it has not been posted to GitHub.
+This description is retained for the independently maintained `quickplay-pr-a` branch of `JaviAir/Project-Plus-Dolphin` following closure of upstream PR #23. It has not been posted as an updated upstream PR description. Existing license and attribution files remain in place; see `COPYING` and the per-file SPDX notices.

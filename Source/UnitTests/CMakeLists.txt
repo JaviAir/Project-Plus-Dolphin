@@ -145,3 +145,21 @@ if(ENABLE_QT)
             $<TARGET_FILE:quickplay_overlap_tests>)
   set_tests_properties(quickplay_index_overlap PROPERTIES TIMEOUT 70)
 endif()
+
+if(ENABLE_QT)
+  add_executable(quickplay_host_recovery_tests EXCLUDE_FROM_ALL
+    NetPlay/HostRecovery.cpp StubHost.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayIndexMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayClient.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayController.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayController.h)
+  set_target_properties(quickplay_host_recovery_tests PROPERTIES AUTOMOC ON)
+  target_link_libraries(quickplay_host_recovery_tests PRIVATE core uicommon Qt6::Core)
+  configure_quickplay_test(quickplay_host_recovery_tests)
+  add_dependencies(unittests quickplay_host_recovery_tests)
+  add_test(NAME quickplay_host_listing_recovery
+    COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/host_recovery.py
+            $<TARGET_FILE:quickplay_host_recovery_tests>)
+  set_tests_properties(quickplay_host_listing_recovery PROPERTIES TIMEOUT 150)
+endif()

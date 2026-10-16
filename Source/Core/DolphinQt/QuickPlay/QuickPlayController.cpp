@@ -20,7 +20,8 @@ QuickPlayController::QuickPlayController(StartHost start_host, CancelHost cancel
   m_poll_timer.setSingleShot(true);
   m_poll_timer.setInterval(1000);
   connect(&m_poll_timer, &QTimer::timeout, this, [this] {
-    if (m_state == State::Searching)
+    if (m_state == State::Searching ||
+        (m_backend == Backend::Lobby && m_state == State::WaitingForOpponent))
       m_matchmaker->Poll();
     else if (m_state == State::WaitingForHost)
       m_matchmaker->PollMatch(m_match_id);
@@ -65,7 +66,8 @@ void QuickPlayController::StartBackend(Backend backend)
                       [this, attempt = m_attempt](QuickPlayMatchmaker::Result result) {
                         if (attempt == m_attempt &&
                             (m_state == State::Searching || m_state == State::PublishingHostCode ||
-                             m_state == State::WaitingForHost || m_state == State::ValidatingMatch))
+                             m_state == State::WaitingForHost || m_state == State::ValidatingMatch ||
+                             (m_backend == Backend::Lobby && m_state == State::WaitingForOpponent)))
                           HandleResult(std::move(result));
                       });
 }
@@ -156,11 +158,18 @@ void QuickPlayController::HandleResult(QuickPlayMatchmaker::Result result)
     QTimer::singleShot(0, this, [this, attempt = m_attempt] { BeginJoin(attempt); });
     break;
   case QuickPlayMatchmaker::State::HostPublished:
-    if (m_state != State::PublishingHostCode)
+    if (m_state != State::PublishingHostCode &&
+        !(m_backend == Backend::Lobby && m_state == State::WaitingForOpponent))
       return;
-    // Keep the bounded setup timeout until the opponent actually arrives.
-    INFO_LOG_FMT(NETPLAY, "QuickPlay: host code published, waiting for opponent");
-    SetState(State::WaitingForOpponent);
+    if (m_state == State::PublishingHostCode)
+    {
+      INFO_LOG_FMT(NETPLAY, "QuickPlay: host code published, waiting for opponent");
+      SetState(State::WaitingForOpponent);
+    }
+    // Drive lobby restoration until the peer connects, without renewing the setup timeout.
+    // A state-change observer may have cancelled or completed the attempt above.
+    if (m_backend == Backend::Lobby && m_state == State::WaitingForOpponent)
+      m_poll_timer.start();
     break;
   case QuickPlayMatchmaker::State::Expired:
   case QuickPlayMatchmaker::State::Error:

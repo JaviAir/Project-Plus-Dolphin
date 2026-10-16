@@ -1,6 +1,6 @@
 # PR #23 review fixes
 
-Target: `quickplay-pr-a`, reviewed and remote head `7757cba325a1936e3eeabd6e8f7a4862bd560c0e` (checked 2026-10-16). No applicable AGENTS.md; initial working tree clean. No pushes or GitHub posts are authorized.
+Original review target: `quickplay-pr-a`, reviewed and remote head `7757cba325a1936e3eeabd6e8f7a4862bd560c0e` (checked 2026-10-16). No applicable AGENTS.md; initial working tree clean. The original review did not authorize pushes or GitHub posts. Subsequent fork maintenance and authorized publication are recorded in section 8.
 
 ## Baseline
 
@@ -88,3 +88,11 @@ Human checks remain pending: ordinary GUI Host/Join, Quick Play matching and can
 
 - `ENABLE_QT=OFF`: the headless Linux application and three NetPlay regression executables build, and all three groups pass in 43.56 s (`headless-build.log`, `headless-tests.log`). The mapping executable has no Qt runtime dependency (`headless-dependencies.log`).
 - Qt was restored to `ENABLE_QT=ON`; the application, original unit executable and every regression executable rebuild successfully (`qt-restore-configure.log`, `qt-restore-build.log`). `git diff --check` passes. The original eight commits remain ancestors of these two fixes; no push, publication or GitHub review was performed.
+
+## 8. Maintain published host listings (peer review R3)
+
+- Following closure of upstream PR #23, the user authorized publishing the existing fixes and continuing the work on their fork. The seven fixes through `62e31056b1` were pushed to `JaviAir/Project-Plus-Dolphin`, branch `quickplay-pr-a`. Historical no-push statements above describe the earlier review sessions.
+- The controller now continues lobby maintenance while waiting for its opponent after host-code publication, and accepts maintenance results/errors in that state. A published matchmaker attempt only checks its existing setup deadline and restores its saved `H` listing when needed; it does not query the directory, resume searching or recreate the NetPlay room. Restoration preserves the exact agreement and encoded room code. The existing retry cadence, cancellation cleanup and setup deadline remain in force. Coordinator hosts do not enter this maintenance path.
+- Added `quickplay_host_recovery_tests`, built from production controller, matchmaker and client sources with Qt Core and AUTOMOC. The private HTTP fixture uses isolated memory configuration and simulated NetPlay host/connection callbacks. It covers capacity rejection followed by recovery and handoff, permanent rejection, the original setup timeout during repeated capacity rejection, cancellation during restoration, and an opponent connecting during restoration. It checks identical listing contents, retry cadence, a single room creation, stable terminal state despite late results, no directory queries after publication, normal child exits and no orphan listing.
+- Before the fix, the new `recover` scenario fails with `host recovery did not complete within fixture deadline` (`/tmp/pr23-host-fix/before.log`). This is the same missing post-publication recovery identified by the independent peer review. No public service, real traversal or gameplay is involved in this regression.
+- After the fix, all five controller scenarios pass (85.56 s, `/tmp/pr23-host-fix/host-tests.log`). The Linux Release application and all affected regression executables build (`after-build.log`). The eight existing NetPlay/Quick Play groups pass; the original suite remains 1,351/1,352 with only the previously documented `PatchAllowlist.VerifyHashes` failure (94.69 s with four parallel jobs, `regression-tests.log`; CTest exit 8). `git diff --check` passes. No Windows, public-index, real traversal or gameplay validation was added in this follow-up, and no binary release was packaged.
