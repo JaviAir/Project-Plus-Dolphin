@@ -58,6 +58,9 @@ def serve(index):
             url = urllib.parse.urlsplit(self.path)
             query = dict(urllib.parse.parse_qsl(url.query))
             response = index.respond(url.path, query)
+            if callable(response):
+                response(self)
+                return
             if response is None:  # Deterministic transport failure, no public network.
                 self.close_connection = True
                 return

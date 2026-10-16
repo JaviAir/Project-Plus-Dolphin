@@ -17,7 +17,11 @@
 
 #include "Core/Config/NetplaySettings.h"
 
-NetPlayIndex::NetPlayIndex() = default;
+NetPlayIndex::NetPlayIndex(std::chrono::milliseconds request_timeout,
+                           std::function<bool()> cancelled)
+    : m_request_timeout(request_timeout), m_cancelled(std::move(cancelled))
+{
+}
 
 NetPlayIndex::~NetPlayIndex()
 {
@@ -42,6 +46,9 @@ std::optional<std::vector<NetPlaySession>>
 NetPlayIndex::List(const std::map<std::string, std::string>& filters)
 {
   Common::HttpRequest request;
+  request.SetTimeout(m_request_timeout);
+  if (m_cancelled)
+    request.SetProgressCallback([this](auto, auto, auto, auto) { return !m_cancelled(); });
 
   std::string list_url = Config::Get(Config::NETPLAY_INDEX_URL) + "/v0/list";
 
@@ -129,6 +136,13 @@ void NetPlayIndex::NotificationLoop()
   while (!m_session_thread_exit_event.WaitFor(std::chrono::seconds(5)))
   {
     Common::HttpRequest request;
+    request.SetTimeout(m_request_timeout);
+    if (m_request_timeout.count() > 0 || m_cancelled)
+    {
+      request.SetProgressCallback([this](auto, auto, auto, auto) {
+        return !m_stop_requested.load() && !(m_cancelled && m_cancelled());
+      });
+    }
     auto response = request.Get(
         fmt::format(
             "{base}/v0/session/active?secret={secret}&player_count={player_count}&game={game}"
@@ -173,7 +187,10 @@ bool NetPlayIndex::Add(const NetPlaySession& session)
     return false;
   Remove();
 
+  // Do not abort admission on cancellation: the response may contain the only secret
+  // with which the owner can remove an already-admitted listing. Still bound the wait.
   Common::HttpRequest request;
+  request.SetTimeout(m_request_timeout);
   auto response = request.Get(
       fmt::format("{base}/v0/session/add?name={name}&region={region}&game={game}"
                   "&password={password:d}&method={method}&server_id={server_id}&in_game={in_game:d}"
@@ -216,6 +233,7 @@ bool NetPlayIndex::Add(const NetPlaySession& session)
   m_player_count = session.player_count;
   m_game = session.game_id;
 
+  m_stop_requested.store(false);
   m_session_thread_exit_event.Reset();
 
   m_session_thread = std::thread([this] { NotificationLoop(); });
@@ -240,6 +258,7 @@ void NetPlayIndex::SetGame(std::string game)
 
 bool NetPlayIndex::StopSessionThread()
 {
+  m_stop_requested.store(true);
   m_session_thread_exit_event.Set();
   if (m_session_thread.joinable())
   {
@@ -258,6 +277,7 @@ void NetPlayIndex::Remove()
 
   // We don't really care whether this fails or not
   Common::HttpRequest request;
+  request.SetTimeout(m_request_timeout);
   request.Get(Config::Get(Config::NETPLAY_INDEX_URL) + "/v0/session/remove?secret=" + m_secret,
               {{"X-Is-Dolphin", "1"}}, Common::HttpRequest::AllowedReturnCodes::All);
 

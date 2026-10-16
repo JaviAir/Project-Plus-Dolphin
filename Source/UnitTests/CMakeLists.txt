@@ -117,3 +117,17 @@ target_link_libraries(netplay_mapping_tests PRIVATE core uicommon)
 add_dependencies(unittests netplay_mapping_tests)
 add_test(NAME netplay_manual_wii_mapping COMMAND netplay_mapping_tests)
 set_tests_properties(netplay_manual_wii_mapping PROPERTIES TIMEOUT 60)
+
+if(ENABLE_QT)
+  add_executable(quickplay_deadline_tests EXCLUDE_FROM_ALL
+    NetPlay/IndexDeadlines.cpp StubHost.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayMatchmaker.cpp
+    ../Core/DolphinQt/QuickPlay/QuickPlayIndexMatchmaker.cpp)
+  target_link_libraries(quickplay_deadline_tests PRIVATE core uicommon Qt6::Core)
+  configure_quickplay_test(quickplay_deadline_tests)
+  add_dependencies(unittests quickplay_deadline_tests)
+  add_test(NAME quickplay_index_deadlines
+    COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/NetPlay/deadlines.py
+            $<TARGET_FILE:quickplay_deadline_tests>)
+  set_tests_properties(quickplay_index_deadlines PROPERTIES TIMEOUT 90)
+endif()

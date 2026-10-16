@@ -1,6 +1,6 @@
 # Quick Play matchmaking and ordinary NetPlay handoff
 
-Adds Quick Play settings, search UI and lobby/coordinator matchmaking. Lobby searchers exchange short-lived listings, agree on a peer and host role, then hand off to ordinary NetPlay. Temporary listing loss retries the same identity/agreement within the existing search and room-setup deadlines; cancellation removes the listing. Index worker cleanup also handles rejected keepalives safely.
+Adds Quick Play settings, search UI and lobby/coordinator matchmaking. Lobby searchers exchange short-lived listings, agree on a peer and host role, then hand off to ordinary NetPlay. Temporary listing loss retries the same identity/agreement within the existing search and room-setup deadlines; cancellation attempts bounded cleanup of the listing. Index worker cleanup also handles rejected keepalives safely. Quick Play index operations have three-second total transfer deadlines; polls and keepalives observe cancellation. Admission keeps its bounded response window to recover a secret for cleanup. Shutdown has a conservative nine-second worker-drain budget plus scheduling with asynchronous DNS. If an admission secret never arrives or removal cannot reach the index, remote expiry remains necessary.
 
 Lobby compatibility requires an identical full Git revision in the `+ppqp2` namespace. Older display-only Quick Play listings are intentionally isolated. Ordinary NetPlay's exact-revision handshake and the coordinator's exact-revision rule remain unchanged. Platform display metadata does not determine compatibility.
 

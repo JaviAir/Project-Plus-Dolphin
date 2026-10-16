@@ -46,6 +46,9 @@ constexpr std::string_view ROOM_KEY = "PPQP1:none";
 
 // Same lifetime as the coordinator's queue ticket.
 constexpr auto SEARCH_TIMEOUT = 180s;
+// Per transfer, including admission, keepalive and cleanup. Cancellation aborts reads;
+// admission and removal retain the full window to recover and use the session secret.
+constexpr auto INDEX_REQUEST_TIMEOUT = 3s;
 constexpr auto SEARCH_LIST_INTERVAL = 3s;
 constexpr auto CLAIM_LIST_INTERVAL = 2s;
 constexpr auto CLAIM_TIMEOUT = 12s;
@@ -228,7 +231,8 @@ struct QuickPlayIndexMatchmaker::Attempt
     Published,
   };
 
-  explicit Attempt(Now clock_) : clock(std::move(clock_))
+  explicit Attempt(Now clock_)
+      : clock(std::move(clock_)), index(INDEX_REQUEST_TIMEOUT, [this] { return cancelled.load(); })
   {
     index.SetErrorCallback([this] { listing_lost.store(true); });
   }
@@ -336,6 +340,8 @@ std::string QuickPlayIndexMatchmaker::Attempt::ListAs(const std::string& tokens,
                                                       const std::string& server_id)
 {
   Unlist();
+  if (cancelled.load())
+    return "NO_RESPONSE";
   NetPlaySession session;
   session.name = std::string(NAME_PREFIX) + tokens;
   session.region = index_region;
@@ -353,6 +359,8 @@ std::string QuickPlayIndexMatchmaker::Attempt::ListAs(const std::string& tokens,
   if (!index.Add(session))
     return index.GetLastError().empty() ? std::string("NO_RESPONSE") : index.GetLastError();
   listed = std::move(session);
+  if (cancelled.load())
+    Unlist();
   return {};
 }
 
@@ -482,6 +490,8 @@ QuickPlayMatchmaker::Result QuickPlayIndexMatchmaker::Attempt::Advance()
     }
     return Searching(notice);
   }
+  if (cancelled.load())
+    return Searching();
   std::erase_if(blocked, [now](const auto& entry) { return entry.second <= now; });
   switch (phase)
   {
@@ -826,7 +836,8 @@ QuickPlayIndexMatchmaker::~QuickPlayIndexMatchmaker()
 {
   Cancel();
   // Join before QObject teardown: the worker may still queue Deliver() on this object, and the
-  // final removal of a listing is bounded by the HTTP timeouts.
+  // active transfer, keepalive join and final removal each have a 3 s total deadline
+  // (9 s conservative drain bound, plus scheduling). Queued cancelled steps do no I/O.
   m_worker.Shutdown();
 }
 

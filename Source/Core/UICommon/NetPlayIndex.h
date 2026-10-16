@@ -3,6 +3,8 @@
 
 #pragma once
 
+#include <atomic>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <optional>
@@ -38,7 +40,11 @@ struct NetPlaySession
 class NetPlayIndex
 {
 public:
-  explicit NetPlayIndex();
+  // Opt-in total deadline for every operation. Zero preserves ordinary NetPlay behavior.
+  // Cancellation interrupts List/keepalive only: Add must recover its secret and Remove
+  // must still attempt cleanup. The callback may run on either request thread.
+  explicit NetPlayIndex(std::chrono::milliseconds request_timeout = {},
+                        std::function<bool()> cancelled = {});
   ~NetPlayIndex();
 
   std::optional<std::vector<NetPlaySession>>
@@ -63,6 +69,10 @@ public:
 private:
   void NotificationLoop();
   bool StopSessionThread();
+
+  const std::chrono::milliseconds m_request_timeout;
+  const std::function<bool()> m_cancelled;
+  std::atomic<bool> m_stop_requested{false};
 
   std::string m_secret;
   std::string m_game;
