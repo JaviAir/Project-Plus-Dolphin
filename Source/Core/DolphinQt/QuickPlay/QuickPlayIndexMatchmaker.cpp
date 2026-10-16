@@ -36,7 +36,8 @@ constexpr std::string_view NAME_FILTER = "PPQP1";
 constexpr std::string_view GAME = "Project+";
 constexpr int PORT = 2626;
 // Not the plain build version: ordinary browsers grey Quick Play listings out.
-constexpr std::string_view VERSION_SUFFIX = "+ppqp1";
+// A new compatibility namespace deliberately isolates the old display-only listings.
+constexpr std::string_view VERSION_SUFFIX = "+ppqp2";
 // The origin digest token. Quick Play hands off to ordinary NetPlay, which has no origin; a
 // listing with any other digest is ignored.
 constexpr std::string_view DIGEST = "00000000";
@@ -849,7 +850,7 @@ void QuickPlayIndexMatchmaker::Start(const QStringList& regions, const QString& 
   attempt->preference = normalized == QStringLiteral("host") ? 'h' :
                         normalized == QStringLiteral("join") ? 'j' :
                                                                'n';
-  attempt->version = Common::GetScmDescStr() + std::string(VERSION_SUFFIX);
+  attempt->version = Common::GetScmRevGitStr() + std::string(VERSION_SUFFIX);
   attempt->nonce = fmt::format(
       "{:06x}", std::uniform_int_distribution<std::uint32_t>(0, 0xffffff)(attempt->random));
   attempt->index_region = IndexRegion(attempt->mask);
