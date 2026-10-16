@@ -38,10 +38,26 @@ Linux Release, Qt 6.7.3, GCC. Existing suite: 1,351/1,352 pass; `PatchAllowlist.
 - After fix: all ten cases pass (`commit4-after.log`): empty/whitespace clearing with and without a command-line override, valid custom/fallback saving, empty/whitespace/invalid custom rejection, and existing invalid optional-input behavior. Each successful save checks base, effective, stored/reloaded values and fallback eligibility.
 - Linux application and offscreen settings executable build (`commit4-after-build.log`).
 
+## 5. Manual Wii Remote defaults
+
+- Remove Wii auto-assignment from every admission while retaining GameCube auto-assignment. This intentionally restores Project+ Dolphin's pre-2609 default; explicit mappings, broadcasts, disconnect cleanup and the mapping UI remain available.
+- Source-built ENet peers exercise the actual server in ordinary and Quick Play rooms. Four room scenarios check GC-only defaults, explicit clear followed by later admission, ordinary disconnect/rejoin and third admission, manual Wii mapping preservation across admission, broadcasts to both peers, clearing, and disconnect cleanup. Quick Play retains its existing one-opponent rule. The actual NetPlay config loader verifies all four Wii sources for every expected map.
+- Before fix: player 1 receives Wii `[1,0,0,0]`, failing the empty-map assertion (`commit5-before.log`).
+- After fix: both room variants and manual mapping scenarios pass (`commit5-after.log`, 8.11 s). Linux application and protocol executable build (`commit5-after-build.log`).
+
+## Final validation
+
+- Full Linux Release application, existing unit suite and all new source-built executables build successfully (`final-build.log`).
+- Full CTest run: all six new regression groups pass; the existing suite remains 1,351/1,352, with only the baseline `PatchAllowlist.VerifyHashes` failure (`final-tests.log`, 151.77 s). CTest's overall exit is 8 because of that baseline failure. No new failures. `git diff --check` passes.
+- `ENABLE_QT=OFF`: all three NetPlay regression groups build and pass (`headless-build.log`, `headless-tests.log`, 43.07 s). The mapping executable's runtime dependency list contains no Qt libraries (`headless-dependencies.log`). Qt was re-enabled for the final build.
+- Windows CMake configuration was attempted with available `clang-cl`, but its compiler link check fails because there is no compatible Windows linker (`windows-configure.log`); the detected `/usr/bin/link` is the Unix utility. No Wine/runtime is available. Native Windows application/test compilation and execution remain pending.
+- Existing handwritten DolphinQt project entries cover the changed production files. No production files were added, so no new project entries are required. Qt CMake test targets carry the application's MSVC RTTI convention.
+- A local updated PR description is in `PR23-description-draft.md`; nothing has been posted or pushed.
+
 ## Reproduction
 
 Configure with `ENABLE_TESTS=ON`, build `unittests` (runs CTest), or build the individual test targets and run `ctest --test-dir <build> --output-on-failure`. Python 3 is required for the private HTTP fixtures. Loopback sockets must be permitted. Qt tests, when present, use `QT_QPA_PLATFORM=offscreen` and are only built with `ENABLE_QT=ON`.
 
 ## Remaining validation
 
-The final controller-default fix, final suite/build, Windows validation and real GUI/traversal/gameplay checks remain to be recorded. Loopback fixtures do not establish gameplay or cross-platform traversal compatibility.
+Human checks remain pending: ordinary GUI Host/Join, Quick Play matching and cancel/retry, GC-only default ports, explicit Wii assignment in the mapping UI, gameplay and a Linux–Windows Quick Play connection. The offscreen settings test exercises the actual dialog, but loopback fixtures do not establish gameplay or cross-platform traversal compatibility.

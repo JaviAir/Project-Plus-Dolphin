@@ -111,3 +111,9 @@ if(ENABLE_QT)
   set_tests_properties(quickplay_coordinator_settings PROPERTIES
     TIMEOUT 20 ENVIRONMENT "QT_QPA_PLATFORM=offscreen;QT_QPA_PLATFORMTHEME=;QT_STYLE_OVERRIDE=Fusion")
 endif()
+
+add_executable(netplay_mapping_tests EXCLUDE_FROM_ALL NetPlay/Mapping.cpp StubHost.cpp)
+target_link_libraries(netplay_mapping_tests PRIVATE core uicommon)
+add_dependencies(unittests netplay_mapping_tests)
+add_test(NAME netplay_manual_wii_mapping COMMAND netplay_mapping_tests)
+set_tests_properties(netplay_manual_wii_mapping PROPERTIES TIMEOUT 60)

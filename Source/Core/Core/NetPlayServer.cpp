@@ -2363,15 +2363,8 @@ void NetPlayServer::AssignNewUserAPad(const Client& player)
       break;
     }
   }
-  for (PlayerId& mapping : m_wiimote_map)
-  {
-    // 0 means unmapped
-    if (mapping == 0)
-    {
-      mapping = player.pid;
-      break;
-    }
-  }
+  // Project+ rooms assign Wii Remotes explicitly through the mapping dialog. Leave all
+  // existing Wii mappings intact on every admission, including Quick Play rooms.
 }
 
 PlayerId NetPlayServer::GiveFirstAvailableIDTo(ENetPeer* player)
